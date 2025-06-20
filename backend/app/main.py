@@ -18,6 +18,8 @@ sentry_dsn = os.getenv("SENTRY_DSN_BACKEND")
 # and not during local development.
 environment = os.getenv("APP_ENV", "development")
 
+# We wrap the entire init call in a condition that checks both for a DSN
+# AND that the environment is not 'development'.
 if sentry_dsn and environment != "development":
     sentry_sdk.init(
         dsn=sentry_dsn,
@@ -43,13 +45,22 @@ app = FastAPI(
 # --- CORS (Cross-Origin Resource Sharing) Configuration ---
 # This middleware allows your Next.js frontend (running on a different domain)
 # to make requests to this FastAPI backend.
+
+# Start with the local development origin
 origins = [
-    "http://localhost:3000",  # For local frontend development
-    # Add your Vercel production and preview URLs here
-    # "https://your-production-domain.com",
-    # It's good practice to use an environment variable for this in production
-    os.getenv("FRONTEND_URL", "http://localhost:3000")
+    "http://localhost:3000",
 ]
+
+# Conditionally add the production frontend URL if it's set
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    origins.append(frontend_url)
+
+# It's also a good practice to allow Vercel preview URLs
+# You could add another environment variable for the pattern, e.g.,
+# VERCEL_PREVIEW_URL_PATTERN="https://*-your-team.vercel.app"
+# Or handle it with a wildcard if your needs are simpler.
+
 
 app.add_middleware(
     CORSMiddleware,
