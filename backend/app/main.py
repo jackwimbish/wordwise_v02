@@ -1,3 +1,5 @@
+# /backend/app/main.py
+
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -16,7 +18,7 @@ sentry_dsn = os.getenv("SENTRY_DSN_BACKEND")
 # and not during local development.
 environment = os.getenv("APP_ENV", "development")
 
-if sentry_dsn:
+if sentry_dsn and environment != "development":
     sentry_sdk.init(
         dsn=sentry_dsn,
         # Set traces_sample_rate to 1.0 to capture 100%
@@ -29,8 +31,6 @@ if sentry_dsn:
         profiles_sample_rate=1.0,
         # Explicitly set the environment
         environment=environment,
-        # Enable Sentry only if the environment is not 'development'
-        enabled=(environment != "development"),
     )
 
 # --- FastAPI App Initialization ---

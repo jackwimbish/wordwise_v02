@@ -17,7 +17,13 @@ explain /frontend/src: The application source code for our Next.js frontend. It'
 
 explain /backend: This directory contains the entire Python backend, built with the FastAPI framework. It handles user authentication, business logic, all interactions with the LLM provider, and database operations via SQLAlchemy. It is designed to be a stateless API.
 
-explain /_docs: This directory contains the official documentation for our core backend technologies: FastAPI, SQLAlchemy, and Alembic. Refer to the files here for detailed API references and usage patterns for these libraries.
+explain /_docs: This directory contains documentation for how we will build the project incuding our tech stack and some library documentation.
+
+explain /_docs/tech-stack.md: This file describes the tech stack we will be using.
+
+explain /_docs/design-decisions.md: This file describes algorithms and data structures that will be used for key design issues in the app.
+
+explain /_docs/libs: This directory contains the official documentation for our core backend technologies: FastAPI, SQLAlchemy, and Alembic. Refer to the files here for detailed API references and usage patterns for these libraries.
 
 
 # ==============================================================================
@@ -76,6 +82,7 @@ ignore .env
 ignore /backend/.env
 ignore /frontend/.env.local
 
+##############################
 # Sentry examples for next.js
 These examples should be used as guidance when configuring Sentry functionality within a project.
 

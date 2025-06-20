@@ -11,10 +11,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-# --- Import the single Base instance from database.py ---
-# This is the correct pattern. All models will inherit from this Base.
 from .database import Base
 
+# NOTE: A new row is automatically added to this table upon user signup
+# via a PostgreSQL trigger. The function and trigger definitions can be
+# found in: /backend/sql/funcs_triggers.sql
 class Profile(Base):
     """
     Stores public user data that is application-specific.
