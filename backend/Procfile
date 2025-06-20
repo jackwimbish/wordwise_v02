@@ -1,1 +1,4 @@
-web: gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app
+# The --bind flag tells Gunicorn which address and port to listen on.
+# 0.0.0.0 means it will listen on all available network interfaces inside the container.
+# $PORT is the environment variable that Railway will provide with the correct port number.
+web: gunicorn -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT app.main:app
