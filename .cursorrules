@@ -53,6 +53,12 @@ explain /frontend/src/components/editor/TiptapEditor.tsx: This will be the main 
 
 explain /frontend/src/lib/editor/SuggestionExtension.ts: This will be our custom TipTap extension that handles rendering suggestion highlights (decorations) based on data from our backend.
 
+# ==============================================================================
+# 4. KEY VARIABLES 
+# ==============================================================================
+# These rules give the AI specific hints about certain env variables
+
+In /frontend/.env.local, BACKEND_URL contains the URL for our FastAPI backend.
 
 # ==============================================================================
 # 5. STANDARD IGNORE PATTERNS
