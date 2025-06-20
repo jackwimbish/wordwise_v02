@@ -1,13 +1,17 @@
 import { create } from 'zustand'
 import { createClient } from './supabase'
 import { createApiClient, type ApiClient } from './api'
-import type { AuthUser, Profile } from '@/types'
+import type { AuthUser, Profile, DocumentListItem } from '@/types'
 
 interface AppState {
   // Auth state
   user: AuthUser | null
   profile: Profile | null
   isLoading: boolean
+  
+  // Documents state
+  documents: DocumentListItem[]
+  documentsLoading: boolean
   
   // API client
   apiClient: ApiClient
@@ -16,6 +20,9 @@ interface AppState {
   setUser: (user: AuthUser | null) => void
   setProfile: (profile: Profile | null) => void
   setLoading: (loading: boolean) => void
+  setDocuments: (documents: DocumentListItem[]) => void
+  setDocumentsLoading: (loading: boolean) => void
+  loadDocuments: () => Promise<void>
   signOut: () => Promise<void>
   
   // Initialize auth
@@ -35,11 +42,28 @@ export const useAppStore = create<AppState>((set) => {
     user: null,
     profile: null,
     isLoading: true,
+    documents: [],
+    documentsLoading: false,
     apiClient,
     
     setUser: (user) => set({ user }),
     setProfile: (profile) => set({ profile }),
     setLoading: (isLoading) => set({ isLoading }),
+    setDocuments: (documents) => set({ documents }),
+    setDocumentsLoading: (documentsLoading) => set({ documentsLoading }),
+    
+    loadDocuments: async () => {
+      try {
+        set({ documentsLoading: true })
+        const response = await apiClient.getDocuments()
+        set({ documents: response.documents })
+      } catch (error) {
+        console.error('Failed to load documents:', error)
+        set({ documents: [] })
+      } finally {
+        set({ documentsLoading: false })
+      }
+    },
     
     signOut: async () => {
       await supabase.auth.signOut()

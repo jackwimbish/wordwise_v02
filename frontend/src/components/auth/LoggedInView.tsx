@@ -41,10 +41,16 @@ export function LoggedInView() {
             </div>
           </div>
 
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-4">
             <p className="text-sm text-gray-600">
-              🎉 Your account is ready! Document management features will be available soon.
+              🎉 Your account is ready! Start creating and managing your documents.
             </p>
+            <Button 
+              onClick={() => window.location.href = '/documents'}
+              className="w-full"
+            >
+              Go to My Documents
+            </Button>
           </div>
 
           <Button 
