@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@sentry/nextjs": "^9.30.0",
     "@tiptap/pm": "^2.14.1",
     "@tiptap/react": "^2.14.1",
     "@tiptap/starter-kit": "^2.14.1",
