@@ -7,13 +7,13 @@ explain this_repo: This is a full-stack AI Writing Assistant application, simila
 
 
 # ==============================================================================
-# 2. ARCHITECTURE & DIRECTORY STRUCTURE (Updated Section)
+# 2. ARCHITECTURE & DIRECTORY STRUCTURE
 # ==============================================================================
 # These rules explain the separation of concerns between frontend and backend.
 
 explain /frontend: This directory contains the entire Next.js frontend. All application source code (components, pages, libraries) is located inside the /frontend/src directory.
 
-explain /frontend/src: The application source code for our Next.js frontend. It's built with React, TypeScript, and TipTap for the rich text editor. UI components from Shadcn/ui are in /src/components, styled with Tailwind CSS.
+explain /frontend/src: The application source code for our Next.js frontend. It's built with React, TypeScript, and TipTap for the rich text editor. UI components from shadcn should be preferred.
 
 explain /backend: This directory contains the entire Python backend, built with the FastAPI framework. It handles user authentication, business logic, all interactions with the LLM provider, and database operations via SQLAlchemy. It is designed to be a stateless API.
 
@@ -31,7 +31,7 @@ explain /backend/app/main.py: This is the main entry point for the FastAPI appli
 
 
 # ==============================================================================
-# 4. KEY FILE EXPLANATIONS (Updated Section)
+# 4. KEY FILE EXPLANATIONS 
 # ==============================================================================
 # These rules give the AI specific hints about our most important files.
 
