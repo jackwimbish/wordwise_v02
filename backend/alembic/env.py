@@ -6,7 +6,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
 from alembic import context
 
@@ -70,12 +70,21 @@ async def run_async_migrations() -> None:
     and associate a connection with the context.
 
     """
-    config.set_main_option('sqlalchemy.url', os.environ['DATABASE_URL'])
-
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    database_url = os.environ['DATABASE_URL']
+    
+    # Create engine directly with comprehensive PgBouncer compatibility settings
+    connectable = create_async_engine(
+        database_url,
         poolclass=pool.NullPool,
+        # Comprehensive PgBouncer compatibility - disable all prepared statement features
+        connect_args={
+            "statement_cache_size": 0,  # Disable prepared statement cache
+            "prepared_statement_cache_size": 0,  # Disable prepared statement cache (alternative name)
+            "command_timeout": 60,  # Set command timeout
+            "server_settings": {
+                "jit": "off",  # Disable JIT compilation which can cause issues with PgBouncer
+            }
+        }
     )
 
     async with connectable.connect() as connection:

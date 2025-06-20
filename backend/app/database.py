@@ -8,6 +8,9 @@ from sqlalchemy.orm import declarative_base
 # Load environment variables from the .env file in the /backend directory
 load_dotenv()
 
+print(f"DATABASE_URL loaded: {os.getenv('DATABASE_URL') is not None}")
+print(f"Current working directory: {os.getcwd()}")
+
 # --- Database Connection String ---
 # This is the most important part. We retrieve the connection string for your
 # Supabase database from the environment variables.
@@ -26,11 +29,21 @@ engine = create_async_engine(
     DATABASE_URL,
     echo=False,  # Set to True to see all generated SQL statements
     poolclass=None, # Recommended for use with PgBouncer
-    # --- THIS IS THE FIX ---
-    # This argument is passed directly to the asyncpg driver.
-    # It disables the prepared statement cache, which is incompatible
-    # with PgBouncer in transaction pooling mode.
-    connect_args={"statement_cache_size": 0}
+    # --- COMPREHENSIVE PGBOUNCER COMPATIBILITY ---
+    # These arguments are passed directly to the asyncpg driver.
+    # They completely disable prepared statements and caching features
+    # that are incompatible with PgBouncer in transaction pooling mode.
+    connect_args={
+        "statement_cache_size": 0,  # Disable prepared statement cache
+        "prepared_statement_cache_size": 0,  # Disable prepared statement cache (alternative name)
+        "command_timeout": 60,  # Set command timeout
+        "server_settings": {
+            "jit": "off",  # Disable JIT compilation which can cause issues with PgBouncer
+        }
+    },
+    # Additional SQLAlchemy settings for PgBouncer compatibility
+    pool_pre_ping=True,  # Validate connections before use
+    pool_recycle=3600,   # Recycle connections every hour
 )
 
 # --- SQLAlchemy Async Session Factory ---
