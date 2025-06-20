@@ -1,11 +1,20 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { AuthForm } from '@/components/auth/AuthForm'
-import { LoggedInView } from '@/components/auth/LoggedInView'
 
 export default function HomePage() {
   const { user, isLoading } = useAppStore()
+  const router = useRouter()
+
+  // Redirect authenticated users to documents page
+  useEffect(() => {
+    if (user && !isLoading) {
+      router.push('/documents')
+    }
+  }, [user, isLoading, router])
 
   if (isLoading) {
     return (
@@ -34,11 +43,7 @@ export default function HomePage() {
           </p>
 
           <div className="flex justify-center">
-            {user ? (
-              <LoggedInView />
-            ) : (
-              <AuthForm />
-            )}
+            <AuthForm />
           </div>
         </div>
       </main>
