@@ -73,13 +73,11 @@ app.add_middleware(
 
 # --- API Routers ---
 # As your application grows, you'll organize endpoints into separate files (routers).
-# We will include them here. For now, we can create placeholder routers.
-# For example:
-# from .routers import documents, suggestions, auth
-#
-# app.include_router(documents.router)
-# app.include_router(suggestions.router)
-# app.include_router(auth.router)
+# We will include them here.
+from .routers import documents, profiles
+
+app.include_router(documents.router, prefix="/api/v1")
+app.include_router(profiles.router, prefix="/api/v1")
 
 
 # --- Root Endpoint / Health Check ---
