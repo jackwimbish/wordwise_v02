@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +9,7 @@ import { Navbar } from '@/components/navigation/Navbar'
 import { formatDistanceToNow } from 'date-fns'
 
 export default function DocumentsPage() {
+  const router = useRouter()
   const { 
     user, 
     documents, 
@@ -30,13 +32,13 @@ export default function DocumentsPage() {
     if (!user) return
     
     try {
-      await apiClient.createDocument({
+      const newDocument = await apiClient.createDocument({
         title: 'Untitled Document',
         content: ''
       })
       
-      // Reload documents to show the new one
-      await loadDocuments()
+      // Navigate directly to the new document
+      router.push(`/documents/${newDocument.id}`)
     } catch (error) {
       console.error('Failed to create document:', error)
     }
@@ -115,7 +117,11 @@ export default function DocumentsPage() {
           {!documentsLoading && documents.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {documents.map((doc) => (
-                <Card key={doc.id} className="hover:shadow-lg transition-shadow cursor-pointer">
+                <Card 
+                  key={doc.id} 
+                  className="hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => router.push(`/documents/${doc.id}`)}
+                >
                   <CardHeader>
                     <CardTitle className="text-lg truncate">
                       {doc.title}
@@ -129,7 +135,14 @@ export default function DocumentsPage() {
                       <span className="text-sm text-gray-500">
                         Created {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
                       </span>
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`/documents/${doc.id}`)
+                        }}
+                      >
                         Open
                       </Button>
                     </div>

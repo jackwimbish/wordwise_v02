@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { createClient } from './supabase'
 import { createApiClient, type ApiClient } from './api'
-import type { AuthUser, Profile, DocumentListItem } from '@/types'
+import type { AuthUser, Profile, DocumentListItem, Document } from '@/types'
 
 interface AppState {
   // Auth state
@@ -13,6 +13,12 @@ interface AppState {
   documents: DocumentListItem[]
   documentsLoading: boolean
   
+  // Current document editing state
+  currentDocument: Document | null
+  currentDocumentLoading: boolean
+  currentDocumentSaving: boolean
+  hasUnsavedChanges: boolean
+  
   // API client
   apiClient: ApiClient
   
@@ -23,13 +29,24 @@ interface AppState {
   setDocuments: (documents: DocumentListItem[]) => void
   setDocumentsLoading: (loading: boolean) => void
   loadDocuments: () => Promise<void>
+  
+  // Document editing actions
+  setCurrentDocument: (document: Document | null) => void
+  setCurrentDocumentLoading: (loading: boolean) => void
+  setCurrentDocumentSaving: (saving: boolean) => void
+  setHasUnsavedChanges: (hasChanges: boolean) => void
+  loadCurrentDocument: (id: string) => Promise<void>
+  saveCurrentDocument: () => Promise<void>
+  updateCurrentDocumentContent: (content: string) => void
+  updateCurrentDocumentTitle: (title: string) => void
+  
   signOut: () => Promise<void>
   
   // Initialize auth
   initializeAuth: () => Promise<void>
 }
 
-export const useAppStore = create<AppState>((set) => {
+export const useAppStore = create<AppState>((set, get) => {
   const supabase = createClient()
   
   // Create API client with auth token getter
@@ -44,6 +61,10 @@ export const useAppStore = create<AppState>((set) => {
     isLoading: true,
     documents: [],
     documentsLoading: false,
+    currentDocument: null,
+    currentDocumentLoading: false,
+    currentDocumentSaving: false,
+    hasUnsavedChanges: false,
     apiClient,
     
     setUser: (user) => set({ user }),
@@ -63,6 +84,63 @@ export const useAppStore = create<AppState>((set) => {
       } finally {
         set({ documentsLoading: false })
       }
+    },
+    
+    // Document editing actions
+    setCurrentDocument: (document: Document | null) => set({ currentDocument: document }),
+    setCurrentDocumentLoading: (loading: boolean) => set({ currentDocumentLoading: loading }),
+    setCurrentDocumentSaving: (saving: boolean) => set({ currentDocumentSaving: saving }),
+    setHasUnsavedChanges: (hasChanges: boolean) => set({ hasUnsavedChanges: hasChanges }),
+
+    loadCurrentDocument: async (id: string) => {
+      try {
+        set({ currentDocumentLoading: true, currentDocument: null })
+        const document = await apiClient.getDocument(id)
+        set({ currentDocument: document, hasUnsavedChanges: false })
+      } catch (error) {
+        console.error('Failed to load document:', error)
+        set({ currentDocument: null })
+      } finally {
+        set({ currentDocumentLoading: false })
+      }
+    },
+
+    saveCurrentDocument: async () => {
+      const { currentDocument } = get()
+      if (!currentDocument) return
+
+      try {
+        set({ currentDocumentSaving: true })
+        const updatedDocument = await apiClient.updateDocument(currentDocument.id, {
+          title: currentDocument.title,
+          content: currentDocument.content
+        })
+        set({ currentDocument: updatedDocument, hasUnsavedChanges: false })
+      } catch (error) {
+        console.error('Failed to save document:', error)
+      } finally {
+        set({ currentDocumentSaving: false })
+      }
+    },
+
+    updateCurrentDocumentContent: (content: string) => {
+      const { currentDocument } = get()
+      if (!currentDocument) return
+      
+      set({
+        currentDocument: { ...currentDocument, content },
+        hasUnsavedChanges: true
+      })
+    },
+
+    updateCurrentDocumentTitle: (title: string) => {
+      const { currentDocument } = get()
+      if (!currentDocument) return
+      
+      set({
+        currentDocument: { ...currentDocument, title },
+        hasUnsavedChanges: true
+      })
     },
     
     signOut: async () => {

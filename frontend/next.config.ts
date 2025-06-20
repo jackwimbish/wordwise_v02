@@ -7,16 +7,15 @@ const nextConfig: NextConfig = {
   eslint: {
     dirs: ['src'],
   },
-  experimental: {
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
-      },
-    },
-  },
+  // Turbo disabled to prevent build manifest issues
+  // turbopack: {
+  //   rules: {
+  //     '*.svg': {
+  //       loaders: ['@svgr/webpack'],
+  //       as: '*.js',
+  //     },
+  //   },
+  // },
   images: {
     formats: ['image/webp', 'image/avif'],
   },

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -36,10 +37,18 @@ export function TiptapEditor({
     ],
     content,
     editable,
+    immediatelyRender: false,
     onUpdate: ({ editor }) => {
       onUpdate(editor.getHTML())
     },
   })
+
+  // Sync content when it changes externally
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content, false)
+    }
+  }, [editor, content])
 
   if (!editor) {
     return null
