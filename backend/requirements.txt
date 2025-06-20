@@ -1,0 +1,18 @@
+# FastAPI and related
+fastapi[all]
+uvicorn[standard]
+gunicorn
+
+# Database (SQLAlchemy, Alembic, Supabase/Postgres driver)
+sqlalchemy[asyncio]
+alembic
+asyncpg
+
+# Security & Auth
+python-jose[cryptography]
+
+# Observability
+sentry-sdk[fastapi]
+
+# Environment variables
+python-dotenv

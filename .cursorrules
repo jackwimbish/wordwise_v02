@@ -1,0 +1,207 @@
+# ==============================================================================
+# 1. HIGH-LEVEL PROJECT OVERVIEW
+# ==============================================================================
+# This gives the AI the main purpose of the entire repository.
+
+explain this_repo: This is a full-stack AI Writing Assistant application, similar to Grammarly. It uses a Next.js frontend and a FastAPI backend to provide real-time writing suggestions to users.
+
+
+# ==============================================================================
+# 2. ARCHITECTURE & DIRECTORY STRUCTURE (Updated Section)
+# ==============================================================================
+# These rules explain the separation of concerns between frontend and backend.
+
+explain /frontend: This directory contains the entire Next.js frontend. All application source code (components, pages, libraries) is located inside the /frontend/src directory.
+
+explain /frontend/src: The application source code for our Next.js frontend. It's built with React, TypeScript, and TipTap for the rich text editor. UI components from Shadcn/ui are in /src/components, styled with Tailwind CSS.
+
+explain /backend: This directory contains the entire Python backend, built with the FastAPI framework. It handles user authentication, business logic, all interactions with the LLM provider, and database operations via SQLAlchemy. It is designed to be a stateless API.
+
+explain /_docs: This directory contains the official documentation for our core backend technologies: FastAPI, SQLAlchemy, and Alembic. Refer to the files here for detailed API references and usage patterns for these libraries.
+
+
+# ==============================================================================
+# 3. OBSERVABILITY & MONITORING
+# ==============================================================================
+# These rules explain how we track errors and performance.
+
+explain sentry_integration: We use the Sentry SDK in our FastAPI backend for comprehensive error tracking and performance monitoring. Every API call should be wrapped in a Sentry transaction to measure latency, and any unexpected exceptions are automatically reported to our Sentry dashboard.
+
+explain /backend/app/main.py: This is the main entry point for the FastAPI application where API routers are included. We will initialize the Sentry SDK here. Once initialized, Sentry will automatically capture unhandled errors and monitor the performance of all API endpoints defined in this application.
+
+
+# ==============================================================================
+# 4. KEY FILE EXPLANATIONS (Updated Section)
+# ==============================================================================
+# These rules give the AI specific hints about our most important files.
+
+explain /backend/app/database.py: This file uses SQLAlchemy's async features to connect to our Supabase Postgres database. It manages the engine and provides a session dependency for FastAPI routes.
+
+explain /backend/app/models.py: This contains all of our SQLAlchemy ORM models and defines our database schema. IMPORTANT: This file is the single source of truth for our database structure. Any change to a model in this file MUST be accompanied by a new, auto-generated Alembic migration.
+
+explain /backend/alembic/: This directory contains our Alembic database migration scripts. This is the EXCLUSIVE and ONLY tool used to apply schema changes to the database. NEVER suggest making schema changes via raw SQL or the Supabase UI. The correct workflow is always: 1. Edit models.py, 2. Run 'alembic revision --autogenerate', 3. Run 'alembic upgrade head'.
+
+explain /frontend/src/app/: This directory contains all pages and layouts, following the Next.js App Router conventions.
+
+explain /frontend/src/components/editor/TiptapEditor.tsx: This will be the main React component for our TipTap-based text editor.
+
+explain /frontend/src/lib/editor/SuggestionExtension.ts: This will be our custom TipTap extension that handles rendering suggestion highlights (decorations) based on data from our backend.
+
+
+# ==============================================================================
+# 5. STANDARD IGNORE PATTERNS
+# ==============================================================================
+# This tells the AI what to avoid, reducing noise and improving speed.
+
+# Ignore dependency directories
+ignore /frontend/node_modules/
+ignore /backend/.venv/
+
+# Ignore Next.js and Vercel build artifacts
+ignore /frontend/.next/
+ignore /frontend/out/
+ignore /.vercel/
+
+# Ignore Python artifacts
+ignore /backend/__pycache__/
+ignore /backend/*.pyc
+
+# Ignore editor and OS-specific files
+ignore .vscode/
+ignore .idea/
+ignore .DS_Store
+
+# Ignore environment files containing secrets
+ignore .env
+ignore /backend/.env
+ignore /frontend/.env.local
+
+# Sentry examples for next.js
+These examples should be used as guidance when configuring Sentry functionality within a project.
+
+# Exception Catching
+
+Use `Sentry.captureException(error)` to capture an exception and log the error in Sentry.
+Use this in try catch blocks or areas where exceptions are expected
+
+# Tracing Examples
+
+Spans should be created for meaningful actions within an applications like button clicks, API calls, and function calls
+Use the `Sentry.startSpan` function to create a span
+Child spans can exist within a parent span
+
+## Custom Span instrumentation in component actions
+
+The `name` and `op` properties should be meaninful for the activities in the call.
+Attach attributes based on relevant information and metrics from the request
+
+```javascript
+function TestComponent() {
+  const handleTestButtonClick = () => {
+    // Create a transaction/span to measure performance
+    Sentry.startSpan(
+      {
+        op: "ui.click",
+        name: "Test Button Click",
+      },
+      (span) => {
+        const value = "some config";
+        const metric = "some metric";
+
+        // Metrics can be added to the span
+        span.setAttribute("config", value);
+        span.setAttribute("metric", metric);
+
+        doSomething();
+      },
+    );
+  };
+
+  return (
+    <button type="button" onClick={handleTestButtonClick}>
+      Test Sentry
+    </button>
+  );
+}
+```
+
+## Custom span instrumentation in API calls
+
+The `name` and `op` properties should be meaninful for the activities in the call.
+Attach attributes based on relevant information and metrics from the request
+
+```javascript
+async function fetchUserData(userId) {
+  return Sentry.startSpan(
+    {
+      op: "http.client",
+      name: `GET /api/users/${userId}`,
+    },
+    async () => {
+      const response = await fetch(`/api/users/${userId}`);
+      const data = await response.json();
+      return data;
+    },
+  );
+}
+```
+
+# Logs
+
+Where logs are used, ensure Sentry is imported using `import * as Sentry from "@sentry/nextjs"`
+Enable logging in Sentry using `Sentry.init({ _experiments: { enableLogs: true } })`
+Reference the logger using `const { logger } = Sentry`
+Sentry offers a consoleLoggingIntegration that can be used to log specific console error types automatically without instrumenting the individual logger calls
+
+## Configuration
+
+In NextJS the client side Sentry initialization is in `instrumentation-client.ts`, the server initialization is in `sentry.edge.config.ts` and the edge initialization is in `sentry.server.config.ts`
+Initialization does not need to be repeated in other files, it only needs to happen the files mentioned above. You should use `import * as Sentry from "@sentry/nextjs"` to reference Sentry functionality
+
+### Baseline
+
+```javascript
+import * as Sentry from "@sentry/nextjs";
+
+Sentry.init({
+  dsn: "https://ecd4bf2b4af8f168fb3e416faa58e432@o4509511687864320.ingest.us.sentry.io/4509529200001024",
+
+  _experiments: {
+    enableLogs: true,
+  },
+});
+```
+
+### Logger Integration
+
+```javascript
+Sentry.init({
+  dsn: "https://ecd4bf2b4af8f168fb3e416faa58e432@o4509511687864320.ingest.us.sentry.io/4509529200001024",
+  integrations: [
+    // send console.log, console.error, and console.warn calls as logs to Sentry
+    Sentry.consoleLoggingIntegration({ levels: ["log", "error", "warn"] }),
+  ],
+});
+```
+
+## Logger Examples
+
+`logger.fmt` is a template literal function that should be used to bring variables into the structured logs.
+
+```javascript
+logger.trace("Starting database connection", { database: "users" });
+logger.debug(logger.fmt`Cache miss for user: ${userId}`);
+logger.info("Updated profile", { profileId: 345 });
+logger.warn("Rate limit reached for endpoint", {
+  endpoint: "/api/results/",
+  isEnterprise: false,
+});
+logger.error("Failed to process payment", {
+  orderId: "order_123",
+  amount: 99.99,
+});
+logger.fatal("Database connection pool exhausted", {
+  database: "users",
+  activeConnections: 100,
+});
+```

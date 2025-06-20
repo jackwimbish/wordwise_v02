@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / C files
+# -----------------------------------------------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Virtual Environment
+# IMPORTANT: Never commit your virtual environment
+# -----------------------------------------------------------------------------
+/.venv/
+/venv/
+/env/
+
+# Environment Variables
+# IMPORTANT: Never commit your secrets and credentials
+# -----------------------------------------------------------------------------
+.env
+
+# Database
+# -----------------------------------------------------------------------------
+*.db
+*.sqlite3
+
+# Test & Coverage Reports
+# -----------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Build and Distribution artifacts
+# -----------------------------------------------------------------------------
+/build/
+/dist/
+/downloads/
+/eggs/
+*.egg
+
+# Sentry-specific
+# -----------------------------------------------------------------------------
+.sentry-cli/
+
+# Other
+# -----------------------------------------------------------------------------
+.python-version
+celerybeat-schedule
