@@ -62,7 +62,7 @@ explain /frontend/src/lib/editor/SuggestionExtension.ts: This will be our custom
 # ==============================================================================
 # These rules give the AI specific hints about certain env variables
 
-In /frontend/.env.local, BACKEND_URL contains the URL for our FastAPI backend.
+In /frontend/.env.local, NEXT_PUBLIC_BACKEND_URL contains the URL for our FastAPI backend.
 
 # ==============================================================================
 # 5. STANDARD IGNORE PATTERNS
@@ -95,6 +95,10 @@ ignore /frontend/.env.local
 
 ##############################
 # Things to remember
+
+Please ensure that you are in the directory you think you are in before running any command.
+It is important not to confuse if you are in the base directory or the frontend or backend directories.
+
 If you wish to start a development server for the backend, you must activate the virtualenv at backend/.venv first
 
 ##############################
