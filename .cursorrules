@@ -23,6 +23,8 @@ explain /_docs/tech-stack.md: This file describes the tech stack we will be usin
 
 explain /_docs/design-decisions.md: This file describes algorithms and data structures that will be used for key design issues in the app.
 
+explain /_docs/implementation-plan.md: This file describes our plan for incrementally incrementing the app.
+
 explain /_docs/libs: This directory contains the official documentation for our core backend technologies: FastAPI, SQLAlchemy, and Alembic. Refer to the files here for detailed API references and usage patterns for these libraries.
 
 
