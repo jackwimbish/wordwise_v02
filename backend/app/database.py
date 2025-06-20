@@ -29,21 +29,24 @@ engine = create_async_engine(
     DATABASE_URL,
     echo=False,  # Set to True to see all generated SQL statements
     poolclass=None, # Recommended for use with PgBouncer
-    # --- COMPREHENSIVE PGBOUNCER COMPATIBILITY ---
+    # --- AGGRESSIVE PGBOUNCER COMPATIBILITY ---
     # These arguments are passed directly to the asyncpg driver.
     # They completely disable prepared statements and caching features
     # that are incompatible with PgBouncer in transaction pooling mode.
     connect_args={
         "statement_cache_size": 0,  # Disable prepared statement cache
         "prepared_statement_cache_size": 0,  # Disable prepared statement cache (alternative name)
+        "prepared_statement_name_func": None,  # Disable prepared statement naming
         "command_timeout": 60,  # Set command timeout
         "server_settings": {
             "jit": "off",  # Disable JIT compilation which can cause issues with PgBouncer
+            "plan_cache_mode": "force_custom_plan",  # Force custom plans instead of cached plans
         }
     },
     # Additional SQLAlchemy settings for PgBouncer compatibility
     pool_pre_ping=True,  # Validate connections before use
-    pool_recycle=3600,   # Recycle connections every hour
+    pool_recycle=300,   # Recycle connections every 5 minutes (more aggressive)
+    pool_reset_on_return='commit',  # Reset connections on return
 )
 
 # --- SQLAlchemy Async Session Factory ---

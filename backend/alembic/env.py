@@ -76,13 +76,15 @@ async def run_async_migrations() -> None:
     connectable = create_async_engine(
         database_url,
         poolclass=pool.NullPool,
-        # Comprehensive PgBouncer compatibility - disable all prepared statement features
+        # Aggressive PgBouncer compatibility - disable all prepared statement features
         connect_args={
             "statement_cache_size": 0,  # Disable prepared statement cache
             "prepared_statement_cache_size": 0,  # Disable prepared statement cache (alternative name)
+            "prepared_statement_name_func": None,  # Disable prepared statement naming
             "command_timeout": 60,  # Set command timeout
             "server_settings": {
                 "jit": "off",  # Disable JIT compilation which can cause issues with PgBouncer
+                "plan_cache_mode": "force_custom_plan",  # Force custom plans instead of cached plans
             }
         }
     )
