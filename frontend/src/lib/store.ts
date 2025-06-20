@@ -68,7 +68,31 @@ export const useAppStore = create<AppState>((set) => {
           } catch (error) {
             console.error('Failed to fetch profile:', error)
           }
+        } else {
+          set({ user: null, profile: null })
         }
+
+        // Listen for auth changes
+        supabase.auth.onAuthStateChange(async (event, session) => {
+          if (event === 'SIGNED_IN' && session?.user) {
+            const user: AuthUser = {
+              id: session.user.id,
+              email: session.user.email,
+              user_metadata: session.user.user_metadata,
+            }
+            set({ user })
+            
+            // Fetch profile from backend
+            try {
+              const profile = await apiClient.getProfile()
+              set({ profile })
+            } catch (error) {
+              console.error('Failed to fetch profile:', error)
+            }
+          } else if (event === 'SIGNED_OUT') {
+            set({ user: null, profile: null })
+          }
+        })
       } catch (error) {
         console.error('Auth initialization failed:', error)
       } finally {
