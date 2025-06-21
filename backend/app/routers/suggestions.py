@@ -52,7 +52,7 @@ openai_client = AsyncOpenAI(
 # Configuration constants
 MAX_PARAGRAPHS_PER_REQUEST = 10
 MAX_PARAGRAPH_LENGTH = 2000
-OPENAI_MODEL = "gpt-4o-mini-2024-07-18"  # Using available model instead of the specified one
+OPENAI_MODEL = "gpt-4.1-nano-2025-04-14"
 
 # System prompt for the LLM
 SYSTEM_PROMPT = """You are an expert writing assistant that analyzes text for spelling, grammar, and style improvements. 
