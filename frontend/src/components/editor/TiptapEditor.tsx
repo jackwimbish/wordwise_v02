@@ -498,12 +498,63 @@ export function TiptapEditor({
     setSelectedSuggestion(null)
   }, [])
 
-  // Handle suggestion accept (placeholder for Phase 3)
+  // Handle suggestion accept (Phase 3)
   const handleAcceptSuggestion = useCallback((suggestion: SuggestionResponse) => {
     console.log('✅ Accept suggestion:', suggestion.original_text, '->', suggestion.suggestion_text)
-    // TODO: Implement accept logic in Phase 3
-    handlePopupClose()
+    
+    if (!editorRef.current) {
+      console.error('Editor not available')
+      handlePopupClose()
+      return
+    }
+
+    const currentEditor = editorRef.current
+
+    try {
+      // Step 1: Find valid position for the suggestion text
+      const validPosition = findValidSuggestionPosition(currentEditor, suggestion)
+      
+      if (!validPosition) {
+        console.warn('Cannot find valid position for suggestion - text may have changed')
+        // TODO: Show user-friendly error message
+        handlePopupClose()
+        return
+      }
+
+      console.log(`🎯 Found valid position for "${suggestion.original_text}" at ${validPosition.start}-${validPosition.end}`)
+
+      // Step 2: Apply text replacement using TipTap transaction
+      const success = currentEditor.chain()
+        .focus() 
+        .setTextSelection({ from: validPosition.start, to: validPosition.end })
+        .insertContent(suggestion.suggestion_text)
+        .run()
+
+      if (!success) {
+        console.error('Failed to apply text replacement')
+        // TODO: Show user-friendly error message
+        handlePopupClose()
+        return
+      }
+
+      console.log('✅ Text replacement successful')
+
+      // Step 3: Remove accepted suggestion from state
+      setSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestion.suggestion_id))
+      
+      // TODO: Show success feedback
+      console.log('💚 Suggestion accepted and applied!')
+
+    } catch (error) {
+      console.error('Error accepting suggestion:', error)
+      // TODO: Show user-friendly error message
+    } finally {
+      // Always close popup
+      handlePopupClose()
+    }
   }, [handlePopupClose])
+
+
 
   // Handle suggestion dismiss (placeholder for Phase 3)
   const handleDismissSuggestion = useCallback((suggestion: SuggestionResponse) => {
@@ -724,6 +775,52 @@ export function TiptapEditor({
     }
     
     return true
+  }
+
+  // Helper function to find valid position for suggestion (Phase 3)
+  const findValidSuggestionPosition = (editor: Editor, suggestion: SuggestionResponse) => {
+    if (!editor) return null
+
+    const doc = editor.state.doc
+    const originalStart = suggestion.global_start
+    const originalEnd = suggestion.global_end
+
+    // Step 1: Check if original position is still valid
+    if (originalStart >= 0 && originalEnd <= doc.content.size && originalStart < originalEnd) {
+      try {
+        const currentText = doc.textBetween(originalStart, originalEnd)
+        if (currentText === suggestion.original_text) {
+          return { start: originalStart, end: originalEnd }
+        }
+      } catch (error) {
+        console.warn('Error reading text at original position:', error)
+      }
+    }
+
+    // Step 2: Search within ±5 characters for the correct position
+    const searchRange = 5
+    for (let offset = -searchRange; offset <= searchRange; offset++) {
+      const testStart = originalStart + offset
+      const testEnd = originalEnd + offset
+
+      // Ensure we're within document bounds
+      if (testStart >= 0 && testEnd <= doc.content.size && testStart < testEnd) {
+        try {
+          const testText = doc.textBetween(testStart, testEnd)
+          if (testText === suggestion.original_text) {
+            console.log(`🎯 Found suggestion text at offset ${offset}`)
+            return { start: testStart, end: testEnd }
+          }
+        } catch {
+          // Skip invalid positions
+          continue
+        }
+      }
+    }
+
+    // Step 3: No valid position found
+    console.warn(`Could not find valid position for "${suggestion.original_text}"`)
+    return null
   }
 
   // Store editor reference for potential future use
