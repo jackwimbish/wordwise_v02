@@ -12,7 +12,6 @@ interface AppState {
   // Documents state
   documents: DocumentListItem[]
   documentsLoading: boolean
-  documentsLoaded: boolean
   
   // Current document editing state
   currentDocument: Document | null
@@ -64,7 +63,6 @@ export const useAppStore = create<AppState>((set, get) => {
     isLoading: true,
     documents: [],
     documentsLoading: false,
-    documentsLoaded: false,
     currentDocument: null,
     currentDocumentLoading: false,
     currentDocumentSaving: false,
@@ -86,10 +84,10 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         set({ documentsLoading: true })
         const response = await apiClient.getDocuments()
-        set({ documents: response.documents, documentsLoaded: true })
+        set({ documents: response.documents })
       } catch (error) {
         console.error('Failed to load documents:', error)
-        set({ documents: [], documentsLoaded: true })
+        set({ documents: [] })
       } finally {
         set({ documentsLoading: false })
       }
@@ -104,7 +102,7 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         set({ documentsLoading: true })
         const response = await apiClient.getDocuments()
-        set({ documents: response.documents, documentsLoaded: true })
+        set({ documents: response.documents })
       } catch (error) {
         console.error('Failed to refresh documents:', error)
       } finally {
@@ -166,7 +164,18 @@ export const useAppStore = create<AppState>((set, get) => {
           title: currentDocument.title,
           content: currentDocument.content
         })
-        set({ currentDocument: updatedDocument, hasUnsavedChanges: false })
+        
+        // Only update metadata fields, preserve the current content in the editor
+        set({ 
+          currentDocument: {
+            ...currentDocument, // Keep current content and title as-is
+            id: updatedDocument.id,
+            profile_id: updatedDocument.profile_id,
+            updated_at: updatedDocument.updated_at,
+            created_at: updatedDocument.created_at
+          }, 
+          hasUnsavedChanges: false 
+        })
       } catch (error) {
         console.error('Failed to save document:', error)
       } finally {
@@ -200,7 +209,6 @@ export const useAppStore = create<AppState>((set, get) => {
         user: null, 
         profile: null, 
         documents: [], 
-        documentsLoaded: false,
         currentDocument: null,
         hasUnsavedChanges: false
       })
@@ -254,7 +262,6 @@ export const useAppStore = create<AppState>((set, get) => {
               user: null, 
               profile: null, 
               documents: [], 
-              documentsLoaded: false,
               currentDocument: null,
               hasUnsavedChanges: false
             })

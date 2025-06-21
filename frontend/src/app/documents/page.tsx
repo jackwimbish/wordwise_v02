@@ -15,7 +15,6 @@ export default function DocumentsPage() {
     user, 
     documents, 
     documentsLoading, 
-    documentsLoaded,
     loadDocuments,
     deleteDocument
   } = useAppStore()
@@ -24,10 +23,10 @@ export default function DocumentsPage() {
   const [documentToDelete, setDocumentToDelete] = useState<{ id: string; title: string } | null>(null)
 
   useEffect(() => {
-    if (user && !documentsLoaded) {
+    if (user) {
       loadDocuments()
     }
-  }, [user, documentsLoaded, loadDocuments]) // Load documents only once per user session
+  }, [user, loadDocuments]) // Always reload documents when navigating to this page
 
   const handleCreateDocument = () => {
     if (!user) return

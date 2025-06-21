@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { TiptapEditor } from '@/components/editor/TiptapEditor'
@@ -30,7 +30,10 @@ export default function DocumentPage() {
   
   const [isTitleEditing, setIsTitleEditing] = useState(false)
   const [titleValue, setTitleValue] = useState('')
+  const [isAutoSaving, setIsAutoSaving] = useState(false)
+  const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null)
   const loadedDocumentId = useRef<string | null>(null)
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Load document on mount or set up new document
   useEffect(() => {
@@ -85,8 +88,14 @@ export default function DocumentPage() {
           content: currentDocument.content
         })
         
-        // Update the current document with the backend response
-        setCurrentDocument(newDocument)
+        // Only update metadata fields, preserve the current content in the editor
+        setCurrentDocument({
+          ...currentDocument, // Keep current content and title as-is
+          id: newDocument.id,
+          profile_id: newDocument.profile_id,
+          updated_at: newDocument.updated_at,
+          created_at: newDocument.created_at
+        })
         
         // Update the URL to the new document ID
         router.replace(`/documents/${newDocument.id}`)
@@ -102,6 +111,84 @@ export default function DocumentPage() {
     }
   }
 
+  // Debounced auto-save function
+  const debouncedAutoSave = useCallback(async () => {
+    // Don't auto-save if there are no changes or if already saving
+    if (!hasUnsavedChanges || currentDocumentSaving) {
+      return
+    }
+
+    try {
+      setIsAutoSaving(true)
+      
+      if (isNewDocument && currentDocument) {
+        // Create new document in backend via auto-save
+        const newDocument = await apiClient.createDocument({
+          title: currentDocument.title,
+          content: currentDocument.content
+        })
+        
+        // Only update metadata fields, preserve the current content in the editor
+        setCurrentDocument({
+          ...currentDocument, // Keep current content and title as-is
+          id: newDocument.id,
+          profile_id: newDocument.profile_id,
+          updated_at: newDocument.updated_at,
+          created_at: newDocument.created_at
+        })
+        
+        // Update the URL to the new document ID
+        router.replace(`/documents/${newDocument.id}`)
+        
+        // Update loaded document ID to prevent reloading
+        loadedDocumentId.current = newDocument.id
+      } else {
+        // Update existing document
+        await saveCurrentDocument()
+      }
+      
+      setLastAutoSave(new Date())
+    } catch (error) {
+      console.error('Auto-save failed:', error)
+    } finally {
+      setIsAutoSaving(false)
+    }
+  }, [hasUnsavedChanges, currentDocumentSaving, isNewDocument, currentDocument, apiClient, setCurrentDocument, router, saveCurrentDocument])
+
+  // Trigger auto-save when content changes
+  useEffect(() => {
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+
+    // Don't auto-save if there are no unsaved changes
+    if (!hasUnsavedChanges) {
+      return
+    }
+
+    // Set new timeout for auto-save (3 seconds after last change to let user finish typing)
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      debouncedAutoSave()
+    }, 3000)
+
+    // Cleanup function
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current)
+      }
+    }
+  }, [hasUnsavedChanges, debouncedAutoSave])
+
+  // Cleanup auto-save timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleTitleSave()
@@ -110,17 +197,7 @@ export default function DocumentPage() {
     }
   }
 
-  // Auto-save functionality (optional - save every 30 seconds if there are changes)
-  // Don't auto-save new documents that haven't been saved yet
-  useEffect(() => {
-    if (!hasUnsavedChanges || isNewDocument) return
 
-    const autoSaveTimer = setTimeout(() => {
-      saveCurrentDocument()
-    }, 30000) // 30 seconds
-
-    return () => clearTimeout(autoSaveTimer)
-  }, [hasUnsavedChanges, isNewDocument, saveCurrentDocument])
 
   if (currentDocumentLoading) {
     return (
@@ -193,19 +270,29 @@ export default function DocumentPage() {
             </div>
             
             <div className="flex items-center gap-3">
-              {hasUnsavedChanges && !isNewDocument && (
+              {/* Auto-save status indicator */}
+              {isAutoSaving && (
+                <span className="text-sm text-blue-600 font-medium flex items-center gap-1">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                  Auto-saving...
+                </span>
+              )}
+              {/* Unsaved changes indicator */}
+              {hasUnsavedChanges && !isAutoSaving && (
                 <span className="text-sm text-orange-600 font-medium">
-                  Unsaved changes
+                  {isNewDocument ? 'New document - unsaved' : 'Unsaved changes'}
                 </span>
               )}
-              {isNewDocument && (
-                <span className="text-sm text-blue-600 font-medium">
-                  New document
+              {/* Last auto-save time */}
+              {lastAutoSave && !hasUnsavedChanges && !isAutoSaving && (
+                <span className="text-sm text-green-600 font-medium">
+                  Auto-saved {lastAutoSave.toLocaleTimeString()}
                 </span>
               )}
+              
               <Button 
                 onClick={handleSave}
-                disabled={currentDocumentSaving || (!hasUnsavedChanges && !isNewDocument)}
+                disabled={currentDocumentSaving || isAutoSaving || !hasUnsavedChanges}
                 className="min-w-[80px]"
               >
                 {currentDocumentSaving ? (
