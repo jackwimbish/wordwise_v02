@@ -20,6 +20,26 @@ from ..schemas import (
     Suggestion
 )
 
+# Sentry SDK Compatibility Layer
+def set_span_attribute(span, key: str, value):
+    """
+    Compatibility function to set span attributes across different Sentry SDK versions.
+    
+    Newer versions (OpenTelemetry-compatible): span.set_attribute(key, value)
+    Older versions: span.set_tag(key, value) or span.set_data(key, value)
+    """
+    # Try the newer OpenTelemetry-compatible method first
+    if hasattr(span, 'set_attribute'):
+        span.set_attribute(key, value)
+    # Fallback to older Sentry SDK methods
+    elif hasattr(span, 'set_tag'):
+        span.set_tag(key, value)
+    elif hasattr(span, 'set_data'):
+        span.set_data(key, value)
+    # Final fallback - just log for debugging
+    else:
+        print(f"Warning: Unable to set span attribute {key}={value}, no compatible method found")
+
 router = APIRouter(prefix="/suggestions", tags=["Suggestions"])
 
 # OpenAI client configuration
@@ -89,7 +109,7 @@ async def analyze_paragraph_with_llm(paragraph_text: str) -> List[Dict]:
             op="llm.openai_request",
             description=f"Analyze paragraph ({len(paragraph_text)} chars)"
         ) as span:
-            span.set_attribute("paragraph_length", len(paragraph_text))
+            set_span_attribute(span, "paragraph_length", len(paragraph_text))
             
             response = await openai_client.chat.completions.create(
                 model=OPENAI_MODEL,
@@ -102,16 +122,16 @@ async def analyze_paragraph_with_llm(paragraph_text: str) -> List[Dict]:
             )
             
             content = response.choices[0].message.content
-            span.set_attribute("response_length", len(content) if content else 0)
+            set_span_attribute(span, "response_length", len(content) if content else 0)
             
             # Parse JSON response
             try:
                 suggestions = json.loads(content) if content else []
-                span.set_attribute("suggestions_count", len(suggestions))
+                set_span_attribute(span, "suggestions_count", len(suggestions))
                 return suggestions
             except json.JSONDecodeError as e:
                 sentry_sdk.capture_exception(e)
-                span.set_attribute("json_parse_error", str(e))
+                set_span_attribute(span, "json_parse_error", str(e))
                 return []
                 
     except Exception as e:
@@ -201,14 +221,14 @@ async def analyze_paragraphs(
         op="suggestions.analyze_paragraphs",
         description=f"Analyze {len(request.paragraphs)} paragraphs"
     ) as span:
-        span.set_attribute("document_id", str(request.document_id))
-        span.set_attribute("paragraphs_count", len(request.paragraphs))
+        set_span_attribute(span, "document_id", str(request.document_id))
+        set_span_attribute(span, "paragraphs_count", len(request.paragraphs))
         
         # Get dismissed suggestions for filtering
         dismissed_identifiers = await get_dismissed_suggestions(
             db, current_profile.id, request.document_id
         )
-        span.set_attribute("dismissed_count", len(dismissed_identifiers))
+        set_span_attribute(span, "dismissed_count", len(dismissed_identifiers))
         
         # Process paragraphs concurrently
         tasks = []
@@ -250,14 +270,18 @@ async def analyze_paragraphs(
                     positions = find_text_positions(paragraph.text_content, suggestion_data["original_text"])
                     
                     if not positions:
-                        errors.append(f"Could not find text '{suggestion_data['original_text']}' in paragraph {paragraph.paragraph_id}")
+                        # This can happen when LLM suggests text that doesn't exactly match paragraph content
+                        # This is normal and not a user-facing error
+                        print(f"DEBUG: Could not find text '{suggestion_data['original_text']}' in paragraph {paragraph.paragraph_id}")
                         continue
                     
                     # Select the best available position
                     selected_position = select_best_position(positions, used_positions)
                     
                     if not selected_position:
-                        errors.append(f"All positions for text '{suggestion_data['original_text']}' are already used in paragraph {paragraph.paragraph_id}")
+                        # This is a normal occurrence when multiple suggestions target the same text
+                        # Log it for debugging but don't show it to the user as an error
+                        print(f"DEBUG: All positions for text '{suggestion_data['original_text']}' are already used in paragraph {paragraph.paragraph_id}")
                         continue
                     
                     relative_start, relative_end = selected_position
@@ -293,8 +317,8 @@ async def analyze_paragraphs(
                 except (KeyError, ValueError) as e:
                     errors.append(f"Invalid suggestion format in paragraph {paragraph.paragraph_id}: {str(e)}")
         
-        span.set_attribute("suggestions_generated", len(all_suggestions))
-        span.set_attribute("errors_count", len(errors))
+        set_span_attribute(span, "suggestions_generated", len(all_suggestions))
+        set_span_attribute(span, "errors_count", len(errors))
         
         return SuggestionAnalysisResponse(
             suggestions=all_suggestions,
@@ -336,8 +360,8 @@ async def dismiss_suggestion(
         op="suggestions.dismiss_suggestion",
         description="Dismiss suggestion"
     ) as span:
-        span.set_attribute("document_id", str(request.document_id))
-        span.set_attribute("rule_id", request.rule_id)
+        set_span_attribute(span, "document_id", str(request.document_id))
+        set_span_attribute(span, "rule_id", request.rule_id)
         
         # Create dismissal record
         dismissal = DismissedSuggestion(

@@ -340,6 +340,7 @@ export default function DocumentPage() {
             content={currentDocument.content}
             onUpdate={updateCurrentDocumentContent}
             placeholder="Start writing your document..."
+            documentId={currentDocument.id}
           />
         </Card>
       </div>

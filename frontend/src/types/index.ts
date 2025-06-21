@@ -52,6 +52,47 @@ export interface DocumentUpdate {
   content?: string
 }
 
+// Suggestion Types
+export interface ParagraphToAnalyze {
+  paragraph_id: string
+  text_content: string
+  base_offset: number
+}
+
+export interface ParagraphAnalysisRequest {
+  document_id: string
+  paragraphs: ParagraphToAnalyze[]
+}
+
+export interface SuggestionResponse {
+  suggestion_id: string
+  rule_id: string
+  category: 'spelling' | 'grammar' | 'style'
+  original_text: string
+  suggestion_text: string
+  message: string
+  global_start: number
+  global_end: number
+  dismissal_identifier: string
+}
+
+export interface SuggestionAnalysisResponse {
+  suggestions: SuggestionResponse[]
+  total_paragraphs_processed: number
+  errors: string[]
+}
+
+export interface DismissSuggestionRequest {
+  document_id: string
+  original_text: string
+  rule_id: string
+}
+
+export interface DismissSuggestionResponse {
+  success: boolean
+  dismissal_identifier: string
+}
+
 // Auth Types
 export interface AuthUser {
   id: string

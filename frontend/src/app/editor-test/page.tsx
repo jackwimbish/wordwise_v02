@@ -41,6 +41,7 @@ export default function EditorTestPage() {
               content={content}
               onUpdate={setContent}
               placeholder="Test the dynamic highlighting by typing before and inside the yellow highlights..."
+              documentId="test-document-id"
             />
             
             {/* Character position guide */}

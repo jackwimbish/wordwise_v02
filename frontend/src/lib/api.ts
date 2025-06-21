@@ -4,7 +4,11 @@ import type {
   Document, 
   DocumentListResponse, 
   DocumentCreate, 
-  DocumentUpdate 
+  DocumentUpdate,
+  ParagraphAnalysisRequest,
+  SuggestionAnalysisResponse,
+  DismissSuggestionRequest,
+  DismissSuggestionResponse
 } from '@/types'
 
 class ApiClient {
@@ -108,6 +112,22 @@ class ApiClient {
   async deleteDocument(id: string): Promise<void> {
     return this.request<void>(`/api/v1/documents/${id}`, {
       method: 'DELETE',
+    })
+  }
+
+  // Suggestions
+  async analyzeParagraphs(data: ParagraphAnalysisRequest, signal?: AbortSignal): Promise<SuggestionAnalysisResponse> {
+    return this.request<SuggestionAnalysisResponse>('/api/v1/suggestions/analyze', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal,
+    })
+  }
+
+  async dismissSuggestion(data: DismissSuggestionRequest): Promise<DismissSuggestionResponse> {
+    return this.request<DismissSuggestionResponse>('/api/v1/suggestions/dismiss', {
+      method: 'POST',
+      body: JSON.stringify(data),
     })
   }
 }
