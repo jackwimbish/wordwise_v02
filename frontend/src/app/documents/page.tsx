@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
@@ -14,19 +14,16 @@ export default function DocumentsPage() {
     user, 
     documents, 
     documentsLoading, 
+    documentsLoaded,
     loadDocuments,
     apiClient 
   } = useAppStore()
 
-  const memoizedLoadDocuments = useCallback(() => {
-    if (user) {
+  useEffect(() => {
+    if (user && !documentsLoaded) {
       loadDocuments()
     }
-  }, [user, loadDocuments])
-
-  useEffect(() => {
-    memoizedLoadDocuments()
-  }, [memoizedLoadDocuments])
+  }, [user, documentsLoaded, loadDocuments]) // Load documents only once per user session
 
   const handleCreateDocument = async () => {
     if (!user) return

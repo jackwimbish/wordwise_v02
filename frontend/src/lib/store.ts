@@ -12,6 +12,7 @@ interface AppState {
   // Documents state
   documents: DocumentListItem[]
   documentsLoading: boolean
+  documentsLoaded: boolean
   
   // Current document editing state
   currentDocument: Document | null
@@ -29,6 +30,7 @@ interface AppState {
   setDocuments: (documents: DocumentListItem[]) => void
   setDocumentsLoading: (loading: boolean) => void
   loadDocuments: () => Promise<void>
+  refreshDocuments: () => Promise<void>
   
   // Document editing actions
   setCurrentDocument: (document: Document | null) => void
@@ -61,6 +63,7 @@ export const useAppStore = create<AppState>((set, get) => {
     isLoading: true,
     documents: [],
     documentsLoading: false,
+    documentsLoaded: false,
     currentDocument: null,
     currentDocumentLoading: false,
     currentDocumentSaving: false,
@@ -74,13 +77,35 @@ export const useAppStore = create<AppState>((set, get) => {
     setDocumentsLoading: (documentsLoading) => set({ documentsLoading }),
     
     loadDocuments: async () => {
+      const { documentsLoading } = get()
+      
+      // Prevent multiple simultaneous calls or unnecessary reloads
+      if (documentsLoading) return
+      
       try {
         set({ documentsLoading: true })
         const response = await apiClient.getDocuments()
-        set({ documents: response.documents })
+        set({ documents: response.documents, documentsLoaded: true })
       } catch (error) {
         console.error('Failed to load documents:', error)
-        set({ documents: [] })
+        set({ documents: [], documentsLoaded: true })
+      } finally {
+        set({ documentsLoading: false })
+      }
+    },
+
+    refreshDocuments: async () => {
+      const { documentsLoading } = get()
+      
+      // Prevent multiple simultaneous calls
+      if (documentsLoading) return
+      
+      try {
+        set({ documentsLoading: true })
+        const response = await apiClient.getDocuments()
+        set({ documents: response.documents, documentsLoaded: true })
+      } catch (error) {
+        console.error('Failed to refresh documents:', error)
       } finally {
         set({ documentsLoading: false })
       }
@@ -93,6 +118,11 @@ export const useAppStore = create<AppState>((set, get) => {
     setHasUnsavedChanges: (hasChanges: boolean) => set({ hasUnsavedChanges: hasChanges }),
 
     loadCurrentDocument: async (id: string) => {
+      const { currentDocumentLoading } = get()
+      
+      // Prevent multiple simultaneous calls
+      if (currentDocumentLoading) return
+      
       try {
         set({ currentDocumentLoading: true, currentDocument: null })
         const document = await apiClient.getDocument(id)
@@ -145,7 +175,14 @@ export const useAppStore = create<AppState>((set, get) => {
     
     signOut: async () => {
       await supabase.auth.signOut()
-      set({ user: null, profile: null })
+      set({ 
+        user: null, 
+        profile: null, 
+        documents: [], 
+        documentsLoaded: false,
+        currentDocument: null,
+        hasUnsavedChanges: false
+      })
     },
     
     initializeAuth: async () => {
@@ -192,7 +229,14 @@ export const useAppStore = create<AppState>((set, get) => {
               console.error('Failed to fetch profile:', error)
             }
           } else if (event === 'SIGNED_OUT') {
-            set({ user: null, profile: null })
+            set({ 
+              user: null, 
+              profile: null, 
+              documents: [], 
+              documentsLoaded: false,
+              currentDocument: null,
+              hasUnsavedChanges: false
+            })
           }
         })
       } catch (error) {

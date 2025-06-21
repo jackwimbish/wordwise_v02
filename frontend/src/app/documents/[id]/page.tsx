@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { TiptapEditor } from '@/components/editor/TiptapEditor'
@@ -28,16 +28,19 @@ export default function DocumentPage() {
   
   const [isTitleEditing, setIsTitleEditing] = useState(false)
   const [titleValue, setTitleValue] = useState('')
+  const loadedDocumentId = useRef<string | null>(null)
 
   // Load document on mount
   useEffect(() => {
-    if (documentId) {
+    if (documentId && documentId !== loadedDocumentId.current) {
+      loadedDocumentId.current = documentId
       loadCurrentDocument(documentId)
     }
     
     // Cleanup on unmount
     return () => {
       setCurrentDocument(null)
+      loadedDocumentId.current = null
     }
   }, [documentId, loadCurrentDocument, setCurrentDocument])
 
