@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
+import { useTabVisibility } from '@/lib/hooks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -21,12 +22,38 @@ export default function DocumentsPage() {
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [documentToDelete, setDocumentToDelete] = useState<{ id: string; title: string } | null>(null)
+  
+  // Keep track of whether we've loaded documents for this user
+  const hasLoadedForUser = useRef<string | null>(null)
 
-  useEffect(() => {
+  // Stable reference to loadDocuments - only depend on user.id to prevent unnecessary re-renders
+  const loadDocumentsStable = useCallback(() => {
     if (user) {
       loadDocuments()
     }
-  }, [user, loadDocuments]) // Always reload documents when navigating to this page
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, loadDocuments]) // Only depend on user.id, not the entire user object
+
+  // Handle tab visibility with automatic refresh - only depend on user.id
+  const handleTabVisible = useCallback(() => {
+    if (user && hasLoadedForUser.current === user.id) {
+      loadDocuments()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, loadDocuments])
+
+  useTabVisibility(handleTabVisible, 5000) // 5 second threshold
+
+  // Load documents when user changes (but not on every user object recreation)
+  useEffect(() => {
+    if (user && hasLoadedForUser.current !== user.id) {
+      hasLoadedForUser.current = user.id
+      loadDocumentsStable()
+    } else if (!user) {
+      hasLoadedForUser.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, loadDocumentsStable]) // Only depend on user.id to prevent unnecessary re-renders
 
   const handleCreateDocument = () => {
     if (!user) return

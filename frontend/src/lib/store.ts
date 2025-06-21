@@ -12,6 +12,7 @@ interface AppState {
   // Documents state
   documents: DocumentListItem[]
   documentsLoading: boolean
+  documentsLastLoaded: number | null
   
   // Current document editing state
   currentDocument: Document | null
@@ -48,6 +49,13 @@ interface AppState {
   initializeAuth: () => Promise<void>
 }
 
+// Helper function to compare user objects
+const usersEqual = (user1: AuthUser | null, user2: AuthUser | null): boolean => {
+  if (user1 === null && user2 === null) return true
+  if (user1 === null || user2 === null) return false
+  return user1.id === user2.id && user1.email === user2.email
+}
+
 export const useAppStore = create<AppState>((set, get) => {
   const supabase = createClient()
   
@@ -63,6 +71,7 @@ export const useAppStore = create<AppState>((set, get) => {
     isLoading: true,
     documents: [],
     documentsLoading: false,
+    documentsLastLoaded: null,
     currentDocument: null,
     currentDocumentLoading: false,
     currentDocumentSaving: false,
@@ -72,19 +81,24 @@ export const useAppStore = create<AppState>((set, get) => {
     setUser: (user) => set({ user }),
     setProfile: (profile) => set({ profile }),
     setLoading: (isLoading) => set({ isLoading }),
-    setDocuments: (documents) => set({ documents }),
+    setDocuments: (documents) => set({ documents, documentsLastLoaded: Date.now() }),
     setDocumentsLoading: (documentsLoading) => set({ documentsLoading }),
     
     loadDocuments: async () => {
-      const { documentsLoading } = get()
+      const state = get()
       
-      // Prevent multiple simultaneous calls or unnecessary reloads
-      if (documentsLoading) return
+      // Don't load if already loading, but allow retry if last load was more than 30 seconds ago
+      if (state.documentsLoading) {
+        const timeSinceLastLoad = state.documentsLastLoaded ? Date.now() - state.documentsLastLoaded : Infinity
+        if (timeSinceLastLoad < 30000) {
+          return
+        }
+      }
       
       try {
         set({ documentsLoading: true })
         const response = await apiClient.getDocuments()
-        set({ documents: response.documents })
+        set({ documents: response.documents, documentsLastLoaded: Date.now() })
       } catch (error) {
         console.error('Failed to load documents:', error)
         set({ documents: [] })
@@ -94,15 +108,11 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     refreshDocuments: async () => {
-      const { documentsLoading } = get()
-      
-      // Prevent multiple simultaneous calls
-      if (documentsLoading) return
-      
+      // For explicit refresh, always allow even if loading
       try {
         set({ documentsLoading: true })
         const response = await apiClient.getDocuments()
-        set({ documents: response.documents })
+        set({ documents: response.documents, documentsLastLoaded: Date.now() })
       } catch (error) {
         console.error('Failed to refresh documents:', error)
       } finally {
@@ -209,6 +219,7 @@ export const useAppStore = create<AppState>((set, get) => {
         user: null, 
         profile: null, 
         documents: [], 
+        documentsLastLoaded: null,
         currentDocument: null,
         hasUnsavedChanges: false
       })
@@ -222,33 +233,16 @@ export const useAppStore = create<AppState>((set, get) => {
         const { data: { session } } = await supabase.auth.getSession()
         
         if (session?.user) {
-          const user: AuthUser = {
+          const newUser: AuthUser = {
             id: session.user.id,
             email: session.user.email,
             user_metadata: session.user.user_metadata,
           }
-          set({ user })
           
-          // Fetch profile from backend
-          try {
-            const profile = await apiClient.getProfile()
-            set({ profile })
-          } catch (error) {
-            console.error('Failed to fetch profile:', error)
-          }
-        } else {
-          set({ user: null, profile: null })
-        }
-
-        // Listen for auth changes
-        supabase.auth.onAuthStateChange(async (event, session) => {
-          if (event === 'SIGNED_IN' && session?.user) {
-            const user: AuthUser = {
-              id: session.user.id,
-              email: session.user.email,
-              user_metadata: session.user.user_metadata,
-            }
-            set({ user })
+          const currentUser = get().user
+          // Only update user if it actually changed
+          if (!usersEqual(currentUser, newUser)) {
+            set({ user: newUser })
             
             // Fetch profile from backend
             try {
@@ -257,11 +251,39 @@ export const useAppStore = create<AppState>((set, get) => {
             } catch (error) {
               console.error('Failed to fetch profile:', error)
             }
+          }
+        } else {
+          set({ user: null, profile: null })
+        }
+
+        // Listen for auth changes
+        supabase.auth.onAuthStateChange(async (event, session) => {
+          if (event === 'SIGNED_IN' && session?.user) {
+            const newUser: AuthUser = {
+              id: session.user.id,
+              email: session.user.email,
+              user_metadata: session.user.user_metadata,
+            }
+            
+            const currentUser = get().user
+            // Only update user if it actually changed
+            if (!usersEqual(currentUser, newUser)) {
+              set({ user: newUser })
+              
+              // Fetch profile from backend
+              try {
+                const profile = await apiClient.getProfile()
+                set({ profile })
+              } catch (error) {
+                console.error('Failed to fetch profile:', error)
+              }
+            }
           } else if (event === 'SIGNED_OUT') {
             set({ 
               user: null, 
               profile: null, 
               documents: [], 
+              documentsLastLoaded: null,
               currentDocument: null,
               hasUnsavedChanges: false
             })

@@ -36,6 +36,8 @@ class ApiClient {
     const config: RequestInit = {
       ...options,
       headers,
+      // Add timeout to prevent hanging requests
+      signal: options.signal || AbortSignal.timeout(30000), // 30 second timeout
     }
 
     try {
@@ -61,6 +63,10 @@ class ApiClient {
         return (text || undefined) as T
       }
     } catch (error) {
+      // Don't log errors for aborted requests (these are expected during tab switches)
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error
+      }
       console.error(`API request failed: ${endpoint}`, error)
       throw error
     }
