@@ -556,12 +556,69 @@ export function TiptapEditor({
 
 
 
-  // Handle suggestion dismiss (placeholder for Phase 3)
-  const handleDismissSuggestion = useCallback((suggestion: SuggestionResponse) => {
+  // Handle suggestion dismiss (Phase 4)
+  const handleDismissSuggestion = useCallback(async (suggestion: SuggestionResponse) => {
     console.log('❌ Dismiss suggestion:', suggestion.original_text)
-    // TODO: Implement dismiss logic in Phase 3
-    handlePopupClose()
-  }, [handlePopupClose])
+    
+    // Guard clause - ensure we have required dependencies
+    if (!documentId || !apiClient) {
+      console.error('Missing documentId or apiClient for dismiss operation')
+      handlePopupClose()
+      return
+    }
+
+    try {
+      // Step 1: Optimistic UI update - remove suggestion immediately for instant feedback
+      setSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestion.suggestion_id))
+      
+      // Step 2: Close popup immediately
+      handlePopupClose()
+      
+      console.log('🔄 Making dismiss API call...')
+      
+      // Step 3: Make API call to persist dismissal
+      const response = await apiClient.dismissSuggestion({
+        document_id: documentId,
+        original_text: suggestion.original_text,
+        rule_id: suggestion.rule_id
+      })
+
+      // Step 4: Success feedback
+      if (response.success) {
+        console.log('✅ Suggestion dismissed successfully:', response.dismissal_identifier)
+        // TODO: Optional success toast notification
+      } else {
+        console.warn('⚠️ Dismiss API returned success=false, but suggestion already removed from UI')
+      }
+      
+    } catch (error: unknown) {
+      // Step 5: Error handling - log error but keep optimistic update
+      console.error('❌ Failed to dismiss suggestion via API:', error)
+      
+      // Determine error type for better logging
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log('📡 Dismiss request was cancelled')
+      } else if (error instanceof Error) {
+        if (error.message.includes('HTTP 404')) {
+          console.error('📄 Document not found for dismiss operation')
+        } else if (error.message.includes('HTTP 5')) {
+          console.error('🔥 Server error during dismiss operation')
+        } else if (error.message.includes('fetch')) {
+          console.error('🌐 Network error during dismiss operation')
+        } else {
+          console.error('❓ API error during dismiss operation:', error.message)
+        }
+      } else {
+        console.error('❓ Unknown error during dismiss operation')
+      }
+      
+      // Note: We intentionally keep the optimistic update even on error
+      // This provides better UX - user sees intended result immediately
+      // If dismiss fails, suggestion might reappear in future sessions (acceptable edge case)
+      
+      // TODO: Optional error toast notification for user feedback
+    }
+  }, [documentId, apiClient, handlePopupClose])
 
   const editor = useEditor({
     extensions: [
