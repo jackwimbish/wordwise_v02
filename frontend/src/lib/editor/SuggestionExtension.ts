@@ -15,17 +15,24 @@ import type { SuggestionResponse } from '@/types'
  * - Non-content-altering overlays for visual feedback
  * - Support for multiple concurrent suggestions
  * - Backend integration for real-time AI suggestions
+ * - Clickable suggestion highlights with callback support
  */
 
 export interface SuggestionOptions {
   suggestions: SuggestionResponse[]
   suggestionClass: string
+  onSuggestionClick?: (suggestion: SuggestionResponse, event: MouseEvent) => void
 }
 
 const suggestionPluginKey = new PluginKey('suggestions')
 
 // Helper function to create decorations
-function createDecorations(doc: Node, suggestions: SuggestionResponse[], suggestionClass: string): DecorationSet {
+function createDecorations(
+  doc: Node, 
+  suggestions: SuggestionResponse[], 
+  suggestionClass: string,
+  onSuggestionClick?: (suggestion: SuggestionResponse, event: MouseEvent) => void
+): DecorationSet {
   const decorations: Decoration[] = []
   
   // Create decorations for suggestions
@@ -73,32 +80,44 @@ function createDecorations(doc: Node, suggestions: SuggestionResponse[], suggest
           }
           
           if (!foundCorrectPosition) {
-            console.warn(`⚠️ Could not find correct position for "${suggestion.original_text}" near ${suggestion.global_start}-${suggestion.global_end}`)
+            console.warn(`⚠️ Could not find correct position for "${suggestion.original_text}" near ${suggestion.global_start}-${suggestion.global_end} - skipping highlight`)
           }
         }
          
-         // Validate the final range
-         if (finalStart < 0 || finalEnd > doc.content.size || finalStart >= finalEnd) {
-           console.warn(`⚠️ Invalid final range for "${suggestion.original_text}": ${finalStart}-${finalEnd}, using original positions`)
-           finalStart = suggestion.global_start
-           finalEnd = suggestion.global_end
-         }
-         
-         // Create inline decoration for highlighting the text range
-        const decoration = Decoration.inline(
-          finalStart,
-          finalEnd,
-          {
-            class: suggestionClass,
-            'data-suggestion-id': suggestion.suggestion_id,
-            'data-suggestion-message': suggestion.message,
-            'data-rule-id': suggestion.rule_id,
-            'data-category': suggestion.category,
-            'data-original-text': suggestion.original_text,
-            'data-suggestion-text': suggestion.suggestion_text,
+        // Only create decoration if we found the correct position
+        if (foundCorrectPosition) {
+          // Final validation of the range
+          if (finalStart >= 0 && finalEnd <= doc.content.size && finalStart < finalEnd) {
+            // Create inline decoration for highlighting the text range
+            const decoration = Decoration.inline(
+              finalStart,
+              finalEnd,
+              {
+                class: suggestionClass,
+                'data-suggestion-id': suggestion.suggestion_id,
+                'data-suggestion-message': suggestion.message,
+                'data-rule-id': suggestion.rule_id,
+                'data-category': suggestion.category,
+                'data-original-text': suggestion.original_text,
+                'data-suggestion-text': suggestion.suggestion_text,
+                'data-dismissal-identifier': suggestion.dismissal_identifier,
+              },
+              {
+                // Make the decoration clickable
+                onclick: (event: MouseEvent) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (onSuggestionClick) {
+                    onSuggestionClick(suggestion, event)
+                  }
+                }
+              }
+            )
+            decorations.push(decoration)
+          } else {
+            console.warn(`⚠️ Invalid final range for "${suggestion.original_text}": ${finalStart}-${finalEnd} - skipping highlight`)
           }
-        )
-        decorations.push(decoration)
+        }
       } catch (error) {
         // Silently handle invalid ranges
         console.warn('Invalid suggestion range:', suggestion, error)
@@ -119,6 +138,7 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
     return {
       suggestions: [],
       suggestionClass: 'suggestion-highlight',
+      onSuggestionClick: undefined,
     }
   },
 
@@ -131,7 +151,12 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
         
         state: {
           init(_, { doc }) {
-            return createDecorations(doc, extensionOptions.suggestions, extensionOptions.suggestionClass)
+            return createDecorations(
+              doc, 
+              extensionOptions.suggestions, 
+              extensionOptions.suggestionClass,
+              extensionOptions.onSuggestionClick
+            )
           },
           
           apply(transaction, decorationSet, oldState, newState) {
@@ -139,7 +164,12 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
             const suggestions = extensionOptions.suggestions || []
             
             // Create new decorations based on current suggestions
-            return createDecorations(newState.doc, suggestions, extensionOptions.suggestionClass)
+            return createDecorations(
+              newState.doc, 
+              suggestions, 
+              extensionOptions.suggestionClass,
+              extensionOptions.onSuggestionClick
+            )
           },
         },
         
@@ -147,12 +177,45 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
           decorations(state) {
             return this.getState(state)
           },
+          
+          // Handle click events on suggestion decorations
+          handleClick(view, pos, event) {
+            // Find if the click is on a suggestion decoration
+            const decorations = this.getState(view.state) as DecorationSet
+            const clickedDecorations = decorations.find(pos, pos)
+            
+            if (clickedDecorations.length > 0) {
+              // Get the suggestion data from the clicked decoration
+              const element = event.target as HTMLElement
+              
+              // Extract suggestion data from the element attributes
+              const suggestionId = element.getAttribute('data-suggestion-id')
+              const ruleId = element.getAttribute('data-rule-id')
+              const category = element.getAttribute('data-category') as 'spelling' | 'grammar' | 'style'
+              const originalText = element.getAttribute('data-original-text')
+              const suggestionText = element.getAttribute('data-suggestion-text')
+              const message = element.getAttribute('data-suggestion-message')
+              const dismissalIdentifier = element.getAttribute('data-dismissal-identifier')
+              
+              if (suggestionId && ruleId && category && originalText && suggestionText && message && dismissalIdentifier) {
+                // Find the matching suggestion from the options
+                const matchingSuggestion = extensionOptions.suggestions.find(s => s.suggestion_id === suggestionId)
+                
+                if (matchingSuggestion && extensionOptions.onSuggestionClick) {
+                  extensionOptions.onSuggestionClick(matchingSuggestion, event as MouseEvent)
+                  return true // Prevent default handling
+                }
+              }
+            }
+            
+            return false // Allow default handling
+          },
         },
       }),
     ]
   },
 
   onCreate() {
-    console.log('SuggestionExtension initialized with backend API support')
+    console.log('SuggestionExtension initialized with clickable highlights')
   },
 }) 

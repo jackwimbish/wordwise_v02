@@ -8,6 +8,7 @@ import { Extension } from '@tiptap/core'
 import { Transaction } from '@tiptap/pm/state'
 import { Button } from '@/components/ui/button'
 import { SuggestionExtension } from '@/lib/editor/SuggestionExtension'
+import { SuggestionPopup } from '@/components/editor/SuggestionPopup'
 import { useAppStore } from '@/lib/store'
 import type { SuggestionResponse, ParagraphToAnalyze, ParagraphAnalysisRequest } from '@/types'
 
@@ -66,6 +67,11 @@ export function TiptapEditor({
 }: TiptapEditorProps) {
   // State for live suggestions from backend
   const [suggestions, setSuggestions] = useState<SuggestionResponse[]>([])
+  
+  // Suggestion popup state
+  const [selectedSuggestion, setSelectedSuggestion] = useState<SuggestionResponse | null>(null)
+  const [popupVisible, setPopupVisible] = useState(false)
+  const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0, positionAbove: true })
   
   // Paragraph tracking state
   const [paragraphs, setParagraphs] = useState<Map<string, ParagraphState>>(new Map())
@@ -278,20 +284,27 @@ export function TiptapEditor({
               newEnd = transaction.mapping.map(newEnd)
             }
             
-            // Validate the transformed suggestion
+            // Validate the transformed suggestion with comprehensive bounds checking
             if (newStart >= 0 && newEnd > newStart && editorRef.current) {
               const docSize = editorRef.current.state.doc.content.size
               
-              if (newEnd <= docSize) {
-                const text = editorRef.current.state.doc.textBetween(newStart, newEnd)
-                
-                if (text && text.length > 0) {
-                  return {
-                    ...suggestion,
-                    global_start: newStart,
-                    global_end: newEnd
+              // Ensure positions are within document bounds
+              if (newEnd <= docSize && newStart < docSize) {
+                try {
+                  const text = editorRef.current.state.doc.textBetween(newStart, newEnd)
+                  
+                  if (text && text.length > 0) {
+                    return {
+                      ...suggestion,
+                      global_start: newStart,
+                      global_end: newEnd
+                    }
                   }
+                } catch (error) {
+                  console.warn(`Failed to read text at positions ${newStart}-${newEnd} (doc size: ${docSize}):`, error)
                 }
+              } else {
+                console.warn(`Positions out of bounds: ${newStart}-${newEnd} (doc size: ${docSize})`)
               }
             }
           } catch (error) {
@@ -302,30 +315,44 @@ export function TiptapEditor({
         }).filter(Boolean) as SuggestionResponse[]
       }
       
-      // Debug: Verify final suggestion positions
+      // Debug: Verify final suggestion positions with safe text reading
       transformedSuggestions.forEach(s => {
         if (editorRef.current) {
-          const text = editorRef.current.state.doc.textBetween(s.global_start, s.global_end)
+          const docSize = editorRef.current.state.doc.content.size
           
-          if (text === s.original_text) {
-            console.log(`✅ Suggestion "${s.original_text}" positioned correctly at ${s.global_start}-${s.global_end}`)
-          } else {
-            console.warn(`🚨 Position error: "${s.original_text}" -> "${text}" at ${s.global_start}-${s.global_end}`)
-            
-            // Try to find the correct position by searching the document
-            const docText = editorRef.current.state.doc.textContent
-            const correctIndex = docText.indexOf(s.original_text)
-            if (correctIndex !== -1) {
-              console.log(`  🔍 Correct position should be: ${correctIndex}-${correctIndex + s.original_text.length}`)
-              console.log(`  📊 Position difference: expected ${s.global_start}, actual ${correctIndex} (off by ${s.global_start - correctIndex})`)
+          // Ensure positions are valid before reading text
+          if (s.global_start >= 0 && s.global_end <= docSize && s.global_start < s.global_end) {
+            try {
+              const text = editorRef.current.state.doc.textBetween(s.global_start, s.global_end)
+              
+              if (text === s.original_text) {
+                console.log(`✅ Suggestion "${s.original_text}" positioned correctly at ${s.global_start}-${s.global_end}`)
+              } else {
+                console.warn(`🚨 Position error: "${s.original_text}" -> "${text}" at ${s.global_start}-${s.global_end}`)
+                
+                // Try to find the correct position by searching the document
+                const docText = editorRef.current.state.doc.textContent
+                const correctIndex = docText.indexOf(s.original_text)
+                if (correctIndex !== -1) {
+                  console.log(`  🔍 Correct position should be: ${correctIndex}-${correctIndex + s.original_text.length}`)
+                  console.log(`  📊 Position difference: expected ${s.global_start}, actual ${correctIndex} (off by ${s.global_start - correctIndex})`)
+                }
+                
+                // Show surrounding context safely
+                const contextStart = Math.max(0, s.global_start - 10)
+                const contextEnd = Math.min(docSize, s.global_end + 10)
+                try {
+                  const context = editorRef.current.state.doc.textBetween(contextStart, contextEnd)
+                  console.log(`  📝 Context: "${context}"`)
+                } catch (contextError) {
+                  console.warn(`  📝 Could not read context: ${contextError}`)
+                }
+              }
+            } catch (error) {
+              console.warn(`Failed to verify suggestion position ${s.global_start}-${s.global_end}:`, error)
             }
-            
-            // Show surrounding context
-            const docSize = editorRef.current.state.doc.content.size
-            const contextStart = Math.max(0, s.global_start - 10)
-            const contextEnd = Math.min(docSize, s.global_end + 10)
-            const context = editorRef.current.state.doc.textBetween(contextStart, contextEnd)
-            console.log(`  📝 Context: "${context}"`)
+          } else {
+            console.warn(`Invalid suggestion positions: ${s.global_start}-${s.global_end} (doc size: ${docSize})`)
           }
         }
       })
@@ -404,6 +431,87 @@ export function TiptapEditor({
     }, 500) // 500ms debounce as specified in Milestone 3
   }, [analyzeDirtyParagraphs])
 
+  // Handle suggestion click events (Phase 1)
+  const handleSuggestionClick = useCallback((suggestion: SuggestionResponse, event: MouseEvent) => {
+    console.log('🖱️ Suggestion clicked:', suggestion.original_text)
+    
+    // Calculate popup position relative to the clicked element
+    const rect = (event.target as HTMLElement).getBoundingClientRect()
+    const popupX = rect.left + rect.width / 2 // Center horizontally on the clicked text
+    
+    // Smart positioning: check if popup would go off-screen
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
+    const popupHeight = 300 // Increased estimate for popup height
+    const popupWidth = 320 // Popup width (w-80 = 320px)
+    
+    // Determine vertical position (above or below the text)
+    // For above positioning: popup bottom should be at rect.top with some margin
+    // For below positioning: popup top should be at rect.bottom with some margin
+    
+    let popupY
+    let positionAbove = true
+    
+    // Check if there's enough space above the clicked element
+    const spaceAbove = rect.top
+    const spaceBelow = viewportHeight - rect.bottom
+    
+    console.log(`📏 Space analysis: above=${spaceAbove}px, below=${spaceBelow}px, popupHeight=${popupHeight}px`)
+    
+    if (spaceAbove < popupHeight + 30) { // Need extra margin for safety
+      // Not enough space above, position below
+      positionAbove = false
+      popupY = rect.bottom
+      console.log(`📍 Positioning BELOW: not enough space above (${spaceAbove}px < ${popupHeight + 30}px)`)
+    } else {
+      // Enough space above, position above
+      positionAbove = true
+      popupY = rect.top
+      console.log(`📍 Positioning ABOVE: enough space above (${spaceAbove}px >= ${popupHeight + 30}px)`)
+    }
+    
+    // Ensure horizontal position doesn't go off-screen
+    let adjustedPopupX = popupX
+    const halfPopupWidth = popupWidth / 2
+    
+    if (popupX - halfPopupWidth < 20) { // Too far left
+      adjustedPopupX = halfPopupWidth + 20
+    } else if (popupX + halfPopupWidth > viewportWidth - 20) { // Too far right
+      adjustedPopupX = viewportWidth - halfPopupWidth - 20
+    }
+    
+    console.log(`📍 Popup positioning: clicked at (${rect.left}, ${rect.top}), popup at (${adjustedPopupX}, ${popupY}), ${positionAbove ? 'above' : 'below'}`)
+    
+    // Set popup state
+    setSelectedSuggestion(suggestion)
+    setPopupPosition({ 
+      x: adjustedPopupX, 
+      y: popupY,
+      positionAbove 
+    })
+    setPopupVisible(true)
+  }, [])
+
+  // Handle popup close
+  const handlePopupClose = useCallback(() => {
+    setPopupVisible(false)
+    setSelectedSuggestion(null)
+  }, [])
+
+  // Handle suggestion accept (placeholder for Phase 3)
+  const handleAcceptSuggestion = useCallback((suggestion: SuggestionResponse) => {
+    console.log('✅ Accept suggestion:', suggestion.original_text, '->', suggestion.suggestion_text)
+    // TODO: Implement accept logic in Phase 3
+    handlePopupClose()
+  }, [handlePopupClose])
+
+  // Handle suggestion dismiss (placeholder for Phase 3)
+  const handleDismissSuggestion = useCallback((suggestion: SuggestionResponse) => {
+    console.log('❌ Dismiss suggestion:', suggestion.original_text)
+    // TODO: Implement dismiss logic in Phase 3
+    handlePopupClose()
+  }, [handlePopupClose])
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -433,10 +541,11 @@ export function TiptapEditor({
       Placeholder.configure({
         placeholder,
       }),
-      // Add SuggestionExtension with live suggestions
+      // Add SuggestionExtension with live suggestions and click handling
       SuggestionExtension.configure({
         suggestions,
         suggestionClass: 'suggestion-highlight',
+        onSuggestionClick: handleSuggestionClick,
       }),
     ],
     content,
@@ -511,17 +620,26 @@ export function TiptapEditor({
           
           // Check if the suggestion is still valid
           if (isValidSuggestion(suggestion, newStart, newEnd, transaction, editor)) {
-            // Double-check the text at the new position
-            const actualText = editor.state.doc.textBetween(newStart, newEnd)
-            if (actualText !== suggestion.original_text) {
-              console.log(`  ⚠️ Real-time text mismatch: expected "${suggestion.original_text}", got "${actualText}"`)
+            // Double-check the text at the new position with bounds checking
+            const docSize = editor.state.doc.content.size
+            if (newStart >= 0 && newEnd <= docSize && newStart < newEnd) {
+              try {
+                const actualText = editor.state.doc.textBetween(newStart, newEnd)
+                if (actualText !== suggestion.original_text) {
+                  console.log(`  ⚠️ Real-time text mismatch: expected "${suggestion.original_text}", got "${actualText}"`)
+                }
+                
+                updatedSuggestions.push({
+                  ...suggestion,
+                  global_start: newStart,
+                  global_end: newEnd
+                })
+              } catch (error) {
+                console.warn(`  ❌ Failed to read text at ${newStart}-${newEnd}:`, error)
+              }
+            } else {
+              console.log(`  ❌ Invalid bounds after mapping: ${newStart}-${newEnd} (doc size: ${docSize})`)
             }
-            
-            updatedSuggestions.push({
-              ...suggestion,
-              global_start: newStart,
-              global_end: newEnd
-            })
           } else {
             console.log(`  ❌ Real-time mapping invalidated suggestion`)
           }
@@ -568,6 +686,13 @@ export function TiptapEditor({
 
     // Additional check: ensure the text content is still reasonable
     try {
+      // Double-check bounds before reading text
+      const docSize = editor.state.doc.content.size
+      if (newStart < 0 || newEnd > docSize || newStart >= newEnd) {
+        console.log(`    🚫 Invalid bounds in content check: ${newStart}-${newEnd} (doc size: ${docSize})`)
+        return false
+      }
+      
       const textSlice = editor.state.doc.textBetween(newStart, newEnd)
       const expectedText = originalSuggestion.original_text
       
@@ -995,6 +1120,16 @@ export function TiptapEditor({
           background-color: #fde68a !important;
         }
       `}</style>
+
+      {/* Suggestion Popup (Phase 2) */}
+      <SuggestionPopup
+        suggestion={selectedSuggestion}
+        isVisible={popupVisible}
+        position={popupPosition}
+        onAccept={handleAcceptSuggestion}
+        onDismiss={handleDismissSuggestion}
+        onClose={handlePopupClose}
+      />
     </div>
   )
 } 
