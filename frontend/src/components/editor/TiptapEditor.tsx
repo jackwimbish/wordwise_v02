@@ -357,9 +357,41 @@ export function TiptapEditor({
         }
       })
       
-      // Update suggestions state
-      console.log(`🎯 Setting ${transformedSuggestions.length} suggestions in state`)
-      setSuggestions(transformedSuggestions)
+      // Update suggestions state by merging with existing suggestions from non-analyzed paragraphs
+      console.log(`🔄 Merging ${transformedSuggestions.length} new suggestions with existing suggestions`)
+      
+      setSuggestions(prevSuggestions => {
+        // Get IDs of paragraphs that were analyzed
+        const analyzedParagraphIds = new Set(paragraphsToAnalyze.map(p => p.id))
+        
+        // Keep suggestions from paragraphs that were NOT analyzed
+        const suggestionsToKeep = prevSuggestions.filter(suggestion => {
+          // Find which paragraph this suggestion belongs to by checking its position
+          const suggestionParagraph = Array.from(paragraphs.values()).find(p => {
+            // Check if suggestion falls within this paragraph's range
+            return suggestion.global_start >= p.baseOffset && 
+                   suggestion.global_start < p.baseOffset + p.content.length + 50 // Add buffer for safety
+          })
+          
+          // Keep suggestion if it's from a paragraph that wasn't analyzed
+          const shouldKeep = !suggestionParagraph || !analyzedParagraphIds.has(suggestionParagraph.id)
+          
+          if (shouldKeep) {
+            console.log(`📌 Keeping suggestion "${suggestion.original_text}" from non-analyzed paragraph`)
+          } else {
+            console.log(`🗑️ Removing old suggestion "${suggestion.original_text}" from analyzed paragraph ${suggestionParagraph?.id}`)
+          }
+          
+          return shouldKeep
+        })
+        
+        // Combine kept suggestions with new suggestions
+        const mergedSuggestions = [...suggestionsToKeep, ...transformedSuggestions]
+        
+        console.log(`🎯 Suggestion merge complete: ${suggestionsToKeep.length} kept + ${transformedSuggestions.length} new = ${mergedSuggestions.length} total`)
+        
+        return mergedSuggestions
+      })
       
       // Mark analyzed paragraphs as clean
       const cleanParagraphs = new Map(paragraphs)
