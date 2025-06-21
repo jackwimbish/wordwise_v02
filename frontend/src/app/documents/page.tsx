@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { Navbar } from '@/components/navigation/Navbar'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -16,8 +17,11 @@ export default function DocumentsPage() {
     documentsLoading, 
     documentsLoaded,
     loadDocuments,
-    apiClient 
+    deleteDocument
   } = useAppStore()
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [documentToDelete, setDocumentToDelete] = useState<{ id: string; title: string } | null>(null)
 
   useEffect(() => {
     if (user && !documentsLoaded) {
@@ -25,19 +29,27 @@ export default function DocumentsPage() {
     }
   }, [user, documentsLoaded, loadDocuments]) // Load documents only once per user session
 
-  const handleCreateDocument = async () => {
+  const handleCreateDocument = () => {
     if (!user) return
     
+    // Navigate to new document page without creating in backend yet
+    router.push('/documents/new')
+  }
+
+  const handleDeleteClick = (doc: { id: string; title: string }) => {
+    setDocumentToDelete(doc)
+    setDeleteConfirmOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!documentToDelete) return
+    
     try {
-      const newDocument = await apiClient.createDocument({
-        title: 'Untitled Document',
-        content: ''
-      })
-      
-      // Navigate directly to the new document
-      router.push(`/documents/${newDocument.id}`)
+      await deleteDocument(documentToDelete.id)
+      setDocumentToDelete(null)
     } catch (error) {
-      console.error('Failed to create document:', error)
+      console.error('Failed to delete document:', error)
+      // You could add a toast notification here for error handling
     }
   }
 
@@ -141,16 +153,41 @@ export default function DocumentsPage() {
                       <span className="text-sm text-gray-500">
                         Created {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
                       </span>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/documents/${doc.id}`)
-                        }}
-                      >
-                        Open
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/documents/${doc.id}`)
+                          }}
+                        >
+                          Open
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteClick({ id: doc.id, title: doc.title })
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:border-red-300"
+                        >
+                          <svg 
+                            className="w-4 h-4" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round" 
+                              strokeWidth={2} 
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                            />
+                          </svg>
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -159,6 +196,22 @@ export default function DocumentsPage() {
           )}
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Document"
+        description={
+          documentToDelete 
+            ? `Are you sure you want to delete "${documentToDelete.title}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this document? This action cannot be undone.'
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
     </div>
   )
 } 

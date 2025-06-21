@@ -13,6 +13,7 @@ export default function DocumentPage() {
   const params = useParams()
   const router = useRouter()
   const documentId = params.id as string
+  const isNewDocument = documentId === 'new'
   
   const {
     currentDocument,
@@ -23,16 +24,28 @@ export default function DocumentPage() {
     saveCurrentDocument,
     updateCurrentDocumentContent,
     updateCurrentDocumentTitle,
-    setCurrentDocument
+    setCurrentDocument,
+    apiClient
   } = useAppStore()
   
   const [isTitleEditing, setIsTitleEditing] = useState(false)
   const [titleValue, setTitleValue] = useState('')
   const loadedDocumentId = useRef<string | null>(null)
 
-  // Load document on mount
+  // Load document on mount or set up new document
   useEffect(() => {
-    if (documentId && documentId !== loadedDocumentId.current) {
+    if (isNewDocument) {
+      // Set up a new document without backend call
+      setCurrentDocument({
+        id: '', // Will be set after first save
+        profile_id: '',
+        title: 'Untitled Document',
+        content: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      loadedDocumentId.current = 'new'
+    } else if (documentId && documentId !== loadedDocumentId.current) {
       loadedDocumentId.current = documentId
       loadCurrentDocument(documentId)
     }
@@ -42,7 +55,7 @@ export default function DocumentPage() {
       setCurrentDocument(null)
       loadedDocumentId.current = null
     }
-  }, [documentId, loadCurrentDocument, setCurrentDocument])
+  }, [documentId, isNewDocument, loadCurrentDocument, setCurrentDocument])
 
   // Update title value when document loads
   useEffect(() => {
@@ -64,7 +77,29 @@ export default function DocumentPage() {
   }
 
   const handleSave = async () => {
-    await saveCurrentDocument()
+    if (isNewDocument && currentDocument) {
+      // Create new document in backend
+      try {
+        const newDocument = await apiClient.createDocument({
+          title: currentDocument.title,
+          content: currentDocument.content
+        })
+        
+        // Update the current document with the backend response
+        setCurrentDocument(newDocument)
+        
+        // Update the URL to the new document ID
+        router.replace(`/documents/${newDocument.id}`)
+        
+        // Update loaded document ID to prevent reloading
+        loadedDocumentId.current = newDocument.id
+      } catch (error) {
+        console.error('Failed to create document:', error)
+      }
+    } else {
+      // Update existing document
+      await saveCurrentDocument()
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -76,15 +111,16 @@ export default function DocumentPage() {
   }
 
   // Auto-save functionality (optional - save every 30 seconds if there are changes)
+  // Don't auto-save new documents that haven't been saved yet
   useEffect(() => {
-    if (!hasUnsavedChanges) return
+    if (!hasUnsavedChanges || isNewDocument) return
 
     const autoSaveTimer = setTimeout(() => {
       saveCurrentDocument()
     }, 30000) // 30 seconds
 
     return () => clearTimeout(autoSaveTimer)
-  }, [hasUnsavedChanges, saveCurrentDocument])
+  }, [hasUnsavedChanges, isNewDocument, saveCurrentDocument])
 
   if (currentDocumentLoading) {
     return (
@@ -157,14 +193,19 @@ export default function DocumentPage() {
             </div>
             
             <div className="flex items-center gap-3">
-              {hasUnsavedChanges && (
+              {hasUnsavedChanges && !isNewDocument && (
                 <span className="text-sm text-orange-600 font-medium">
                   Unsaved changes
                 </span>
               )}
+              {isNewDocument && (
+                <span className="text-sm text-blue-600 font-medium">
+                  New document
+                </span>
+              )}
               <Button 
                 onClick={handleSave}
-                disabled={currentDocumentSaving || !hasUnsavedChanges}
+                disabled={currentDocumentSaving || (!hasUnsavedChanges && !isNewDocument)}
                 className="min-w-[80px]"
               >
                 {currentDocumentSaving ? (
@@ -180,7 +221,10 @@ export default function DocumentPage() {
           </div>
           
           <div className="text-sm text-gray-500">
-            Last updated: {new Date(currentDocument.updated_at).toLocaleString()}
+            {isNewDocument 
+              ? 'New document - not saved yet'
+              : `Last updated: ${new Date(currentDocument.updated_at).toLocaleString()}`
+            }
           </div>
         </div>
 

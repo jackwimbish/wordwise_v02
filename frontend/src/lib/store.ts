@@ -31,6 +31,7 @@ interface AppState {
   setDocumentsLoading: (loading: boolean) => void
   loadDocuments: () => Promise<void>
   refreshDocuments: () => Promise<void>
+  deleteDocument: (id: string) => Promise<void>
   
   // Document editing actions
   setCurrentDocument: (document: Document | null) => void
@@ -108,6 +109,26 @@ export const useAppStore = create<AppState>((set, get) => {
         console.error('Failed to refresh documents:', error)
       } finally {
         set({ documentsLoading: false })
+      }
+    },
+
+    deleteDocument: async (id: string) => {
+      try {
+        await apiClient.deleteDocument(id)
+        
+        // Remove the deleted document from the local state
+        const { documents } = get()
+        const updatedDocuments = documents.filter(doc => doc.id !== id)
+        set({ documents: updatedDocuments })
+        
+        // If the current document is the one being deleted, clear it
+        const { currentDocument } = get()
+        if (currentDocument?.id === id) {
+          set({ currentDocument: null, hasUnsavedChanges: false })
+        }
+      } catch (error) {
+        console.error('Failed to delete document:', error)
+        throw error // Re-throw so the UI can handle the error
       }
     },
     

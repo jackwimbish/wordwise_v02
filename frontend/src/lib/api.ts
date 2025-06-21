@@ -46,7 +46,20 @@ class ApiClient {
         throw new Error(`HTTP ${response.status}: ${errorText}`)
       }
 
-      return await response.json()
+      // Handle responses with no content (like 204 No Content)
+      if (response.status === 204 || response.headers.get('content-length') === '0') {
+        return undefined as T
+      }
+
+      // Check if response has content to parse
+      const contentType = response.headers.get('content-type')
+      if (contentType && contentType.includes('application/json')) {
+        return await response.json()
+      } else {
+        // For non-JSON responses, return the text
+        const text = await response.text()
+        return (text || undefined) as T
+      }
     } catch (error) {
       console.error(`API request failed: ${endpoint}`, error)
       throw error
