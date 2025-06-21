@@ -128,7 +128,7 @@ export default function DocumentsPage() {
               {documents.map((doc) => (
                 <Card 
                   key={doc.id} 
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
+                  className="hover:shadow-lg transition-shadow cursor-pointer flex flex-col"
                   onClick={() => router.push(`/documents/${doc.id}`)}
                 >
                   <CardHeader>
@@ -139,17 +139,22 @@ export default function DocumentsPage() {
                       Last updated {formatDistanceToNow(new Date(doc.updated_at), { addSuffix: true })}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    {/* Content Preview */}
-                    {doc.content_preview && (
-                      <div className="mb-4">
+                  <CardContent className="flex flex-col h-full">
+                    {/* Content Preview - Fixed height container */}
+                    <div className="mb-4 flex-1 min-h-[2.5rem]">
+                      {doc.content_preview ? (
                         <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed">
                           {doc.content_preview}
                         </p>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">
+                          No preview available
+                        </p>
+                      )}
+                    </div>
                     
-                    <div className="flex justify-between items-center">
+                    {/* Footer - Always positioned at bottom */}
+                    <div className="flex justify-between items-center mt-auto">
                       <span className="text-sm text-gray-500">
                         Created {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}
                       </span>
