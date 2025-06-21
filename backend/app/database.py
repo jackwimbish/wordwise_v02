@@ -8,45 +8,23 @@ from sqlalchemy.orm import declarative_base
 # Load environment variables from the .env file in the /backend directory
 load_dotenv()
 
-print(f"DATABASE_URL loaded: {os.getenv('DATABASE_URL') is not None}")
-print(f"Current working directory: {os.getcwd()}")
-
 # --- Database Connection String ---
 # This is the most important part. We retrieve the connection string for your
 # Supabase database from the environment variables.
-# In production on Railway, you will set this as a secret.
+# For our persistent server on Railway, we use the DIRECT (NON_POOLING) URL.
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set")
 
-# --- SQLAlchemy Async Engine ---
+# --- SQLAlchemy Async Engine (Updated for Direct Connection) ---
 # The engine is the entry point to the database. It manages connections.
-# For a connection pooler like Supabase's PgBouncer, it's recommended to
-# disable SQLAlchemy's own connection pooling by setting `poolclass=None`.
-# PgBouncer handles the connection pooling for us.
+# Since we are using a direct connection, we now want SQLAlchemy to manage
+# its own connection pool for high performance.
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,  # Set to True to see all generated SQL statements
-    poolclass=None, # Recommended for use with PgBouncer
-    # --- AGGRESSIVE PGBOUNCER COMPATIBILITY ---
-    # These arguments are passed directly to the asyncpg driver.
-    # They completely disable prepared statements and caching features
-    # that are incompatible with PgBouncer in transaction pooling mode.
-    connect_args={
-        "statement_cache_size": 0,  # Disable prepared statement cache
-        "prepared_statement_cache_size": 0,  # Disable prepared statement cache (alternative name)
-        "prepared_statement_name_func": None,  # Disable prepared statement naming
-        "command_timeout": 60,  # Set command timeout
-        "server_settings": {
-            "jit": "off",  # Disable JIT compilation which can cause issues with PgBouncer
-            "plan_cache_mode": "force_custom_plan",  # Force custom plans instead of cached plans
-        }
-    },
-    # Additional SQLAlchemy settings for PgBouncer compatibility
-    pool_pre_ping=True,  # Validate connections before use
-    pool_recycle=300,   # Recycle connections every 5 minutes (more aggressive)
-    pool_reset_on_return='commit',  # Reset connections on return
+    # SQLAlchemy will now use its default, high-performance async connection pool.
 )
 
 # --- SQLAlchemy Async Session Factory ---

@@ -99,6 +99,8 @@ ignore /frontend/.env.local
 Please ensure that you are in the directory you think you are in before running any command.
 It is important not to confuse if you are in the base directory or the frontend or backend directories.
 
+*Important* If you wish to run a command starting a development server, you MUST ENSURE that you are doing it from the correct directory!
+
 If you wish to start a development server for the backend, you must activate the virtualenv at backend/.venv first
 
 ##############################
