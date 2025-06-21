@@ -2,6 +2,7 @@
 
 from typing import List
 from uuid import UUID
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -17,6 +18,37 @@ from ..schemas import (
     DocumentListItem,
     DocumentListResponse
 )
+
+
+def create_content_preview(content: str, max_length: int = 100) -> str:
+    """
+    Create a preview of the document content by taking the first sentence or ~100 characters.
+    Strips HTML tags and cleans up whitespace.
+    """
+    if not content:
+        return ""
+    
+    # Remove HTML tags (TipTap editor content might contain HTML)
+    clean_content = re.sub(r'<[^>]+>', '', content)
+    
+    # Clean up multiple whitespaces and newlines
+    clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+    
+    if len(clean_content) <= max_length:
+        return clean_content
+    
+    # Try to find the first sentence boundary within the limit
+    sentence_end_match = re.search(r'[.!?]\s+', clean_content[:max_length + 20])
+    if sentence_end_match and sentence_end_match.start() < max_length:
+        return clean_content[:sentence_end_match.start() + 1]
+    
+    # If no sentence boundary found, truncate at word boundary
+    truncated = clean_content[:max_length]
+    last_space = truncated.rfind(' ')
+    if last_space > max_length * 0.8:  # If we can find a space reasonably close to the end
+        return truncated[:last_space] + "..."
+    
+    return truncated + "..."
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -38,11 +70,12 @@ async def list_documents(
     )
     documents = result.scalars().all()
     
-    # Convert to list items
+    # Convert to list items with content preview
     document_items = [
         DocumentListItem(
             id=doc.id,
             title=doc.title,
+            content_preview=create_content_preview(doc.content or ""),
             created_at=doc.created_at,
             updated_at=doc.updated_at
         )

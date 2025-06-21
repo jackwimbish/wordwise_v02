@@ -39,6 +39,7 @@ class DocumentListItem(BaseModel):
     """Schema for listing documents (minimal fields for performance)."""
     id: UUID
     title: str
+    content_preview: Optional[str] = Field(None, description="First ~100 characters of content for preview")
     created_at: datetime
     updated_at: datetime
 

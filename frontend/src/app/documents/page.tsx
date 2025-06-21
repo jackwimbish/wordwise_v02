@@ -128,6 +128,15 @@ export default function DocumentsPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {/* Content Preview */}
+                    {doc.content_preview && (
+                      <div className="mb-4">
+                        <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed">
+                          {doc.content_preview}
+                        </p>
+                      </div>
+                    )}
+                    
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-500">
                         Created {formatDistanceToNow(new Date(doc.created_at), { addSuffix: true })}

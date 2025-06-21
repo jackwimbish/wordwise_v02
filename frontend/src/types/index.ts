@@ -32,6 +32,7 @@ export interface Document {
 export interface DocumentListItem {
   id: string
   title: string
+  content_preview?: string
   created_at: string
   updated_at: string
 }
