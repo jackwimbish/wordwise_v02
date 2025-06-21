@@ -99,10 +99,9 @@ ignore /frontend/.env.local
 Please ensure that you are in the directory you think you are in before running any command.
 It is important not to confuse if you are in the base directory or the frontend or backend directories.
 
-Before attempting a command with `npm run dev` you MUST ensure that it will be run from the frontend directory!
-Before attempting a command with `uvicorn app.main:app` you MUST ensure that it will be run from the backend directory!
+Do not attempt to start development servers with commands like `npm run dev` or `uvicorn app.main:app`. You should assume I already have these running.
 
-If you wish to start a development server for the backend, you must activate the virtualenv at backend/.venv first
+If you wish to run commands involving the backend, you must activate the virtualenv at backend/.venv first
 
 ##############################
 # Sentry examples for next.js

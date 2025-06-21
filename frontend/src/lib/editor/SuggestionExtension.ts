@@ -1,23 +1,64 @@
 import { Extension } from '@tiptap/core'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { Node } from '@tiptap/pm/model'
 
 /**
  * SuggestionExtension - Custom TipTap extension for AI-powered writing suggestions
  * 
- * This extension will handle rendering suggestion highlights (decorations) 
- * based on data from our FastAPI backend in future implementations.
+ * This extension handles rendering suggestion highlights (decorations) 
+ * based on suggestion data passed from the editor component.
  * 
- * Features to be implemented:
- * - Grammar and style suggestions
- * - Real-time highlighting of suggested changes
- * - Accept/reject suggestion functionality
- * - Integration with backend AI analysis
+ * Features:
+ * - Static suggestion highlighting using ProseMirror decorations
+ * - Non-content-altering overlays for visual feedback
+ * - Support for multiple concurrent suggestions
  */
 
+export interface Suggestion {
+  id: string
+  start: number
+  end: number
+  message: string
+}
+
 export interface SuggestionOptions {
-  // Future options for AI suggestions
-  enableGrammarCheck: boolean
-  enableStyleSuggestions: boolean
+  suggestions: Suggestion[]
   suggestionClass: string
+}
+
+const suggestionPluginKey = new PluginKey('suggestions')
+
+// Helper function to create decorations
+function createDecorations(doc: Node, suggestions: Suggestion[], suggestionClass: string): DecorationSet {
+  const decorations: Decoration[] = []
+  
+  suggestions.forEach(suggestion => {
+    // Ensure the suggestion range is valid within the document
+    if (suggestion.start >= 0 && 
+        suggestion.end <= doc.content.size && 
+        suggestion.start < suggestion.end) {
+      
+      try {
+        // Create inline decoration for highlighting the text range
+        const decoration = Decoration.inline(
+          suggestion.start,
+          suggestion.end,
+          {
+            class: suggestionClass,
+            'data-suggestion-id': suggestion.id,
+            'data-suggestion-message': suggestion.message,
+          }
+        )
+        decorations.push(decoration)
+      } catch (error) {
+        // Silently handle invalid ranges
+        console.warn('Invalid suggestion range:', suggestion, error)
+      }
+    }
+  })
+  
+  return DecorationSet.create(doc, decorations)
 }
 
 export const SuggestionExtension = Extension.create<SuggestionOptions>({
@@ -25,40 +66,42 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
   
   addOptions() {
     return {
-      enableGrammarCheck: true,
-      enableStyleSuggestions: true,
+      suggestions: [],
       suggestionClass: 'suggestion-highlight',
     }
   },
 
+  addProseMirrorPlugins() {
+    const extensionOptions = this.options
+    
+    return [
+      new Plugin({
+        key: suggestionPluginKey,
+        
+        state: {
+          init(_, { doc }) {
+            return createDecorations(doc, extensionOptions.suggestions, extensionOptions.suggestionClass)
+          },
+          
+          apply(transaction, decorationSet, oldState, newState) {
+            // Get current suggestions from options
+            const suggestions = extensionOptions.suggestions || []
+            
+            // Create new decorations based on current suggestions
+            return createDecorations(newState.doc, suggestions, extensionOptions.suggestionClass)
+          },
+        },
+        
+        props: {
+          decorations(state) {
+            return this.getState(state)
+          },
+        },
+      }),
+    ]
+  },
+
   onCreate() {
-    // Future: Initialize AI suggestion system
-    console.log('SuggestionExtension initialized - ready for AI integration')
+    console.log('SuggestionExtension initialized with decoration support')
   },
-
-  onUpdate() {
-    // Future: Trigger AI analysis on content changes
-    // This will send content to backend for analysis
-  },
-
-  // Future: Add commands for suggestion handling
-  // addCommands() {
-  //   return {
-  //     acceptSuggestion: () => ({ commands }) => {
-  //       // Implementation for accepting AI suggestions
-  //       return true
-  //     },
-  //     rejectSuggestion: () => ({ commands }) => {
-  //       // Implementation for rejecting AI suggestions
-  //       return true
-  //     },
-  //   }
-  // },
-
-  // Future: Add decorations for highlighting suggestions
-  // addProseMirrorPlugins() {
-  //   return [
-  //     // Plugin for rendering suggestion decorations
-  //   ]
-  // },
 }) 

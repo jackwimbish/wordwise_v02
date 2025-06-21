@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEffect, useState, useRef } from 'react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Extension } from '@tiptap/core'
+import { Transaction } from '@tiptap/pm/state'
 import { Button } from '@/components/ui/button'
+import { SuggestionExtension, type Suggestion } from '@/lib/editor/SuggestionExtension'
 
 interface TiptapEditorProps {
   content: string
@@ -31,6 +33,15 @@ export function TiptapEditor({
   placeholder = 'Start writing...', 
   editable = true 
 }: TiptapEditorProps) {
+  // Mutable suggestions for Milestone 2 - can be updated via position mapping
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([
+    { id: 'test-1', start: 25, end: 32, message: 'Test Highlight 1' },
+    { id: 'test-2', start: 50, end: 55, message: 'Test Highlight 2' }
+  ])
+
+  // Track the current editor instance for dynamic updates
+  const editorRef = useRef<typeof editor>(null)
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -60,6 +71,11 @@ export function TiptapEditor({
       Placeholder.configure({
         placeholder,
       }),
+      // Add SuggestionExtension with dynamic suggestions
+      SuggestionExtension.configure({
+        suggestions,
+        suggestionClass: 'suggestion-highlight',
+      }),
     ],
     content,
     editable,
@@ -67,7 +83,117 @@ export function TiptapEditor({
     onUpdate: ({ editor }) => {
       onUpdate(editor.getHTML())
     },
+    // Milestone 2: Add onTransaction callback for real-time highlight transformation
+    onTransaction: ({ editor, transaction }) => {
+      // Only process if the document actually changed
+      if (!transaction.docChanged) return
+
+      // Map suggestion positions to their new locations after the edit
+      const updatedSuggestions: Suggestion[] = []
+      
+      suggestions.forEach(suggestion => {
+        try {
+          // Map the start and end positions using the transaction mapping
+          const newStart = transaction.mapping.map(suggestion.start)
+          const newEnd = transaction.mapping.map(suggestion.end)
+          
+          // Check if the suggestion is still valid
+          if (isValidSuggestion(suggestion, newStart, newEnd, transaction, editor)) {
+            updatedSuggestions.push({
+              ...suggestion,
+              start: newStart,
+              end: newEnd
+            })
+          }
+        } catch (error) {
+          // Invalid suggestion - skip it
+          console.warn('Suggestion invalidated:', suggestion.id, error)
+        }
+      })
+      
+      // Update suggestions state if there are changes
+      if (updatedSuggestions.length !== suggestions.length || 
+          !suggestionsEqual(updatedSuggestions, suggestions)) {
+        setSuggestions(updatedSuggestions)
+      }
+    },
   })
+
+  // Helper function to check if a suggestion is still valid after an edit
+  const isValidSuggestion = (
+    originalSuggestion: Suggestion,
+    newStart: number,
+    newEnd: number,
+    transaction: Transaction,
+    editor: Editor
+  ): boolean => {
+    // Check if the new positions are within document bounds
+    if (newStart < 0 || newEnd > editor.state.doc.content.size || newStart >= newEnd) {
+      return false
+    }
+
+    // Check if the user edited inside the suggestion range
+    // We do this by checking if the mapped range is significantly different from expected
+    const originalLength = originalSuggestion.end - originalSuggestion.start
+    const newLength = newEnd - newStart
+    
+    // If the length changed significantly, the suggestion was likely edited
+    // Also check if the positions shifted by more than the expected amount
+    const positionShift = newStart - originalSuggestion.start
+    const expectedShift = transaction.mapping.map(0) - 0 // Get the general offset
+    
+    // Simple heuristic: if the suggestion length changed or positions are inconsistent
+    if (Math.abs(newLength - originalLength) > 0 || Math.abs(positionShift - expectedShift) > 1) {
+      // Additional check: ensure the text content is still reasonable
+      try {
+        const textSlice = editor.state.doc.textBetween(newStart, newEnd)
+        // If the text is too short or empty, consider it invalidated
+        if (textSlice.length < 2) {
+          return false
+        }
+      } catch {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  // Helper function to compare suggestion arrays
+  const suggestionsEqual = (a: Suggestion[], b: Suggestion[]): boolean => {
+    if (a.length !== b.length) return false
+    
+    for (let i = 0; i < a.length; i++) {
+      if (a[i].id !== b[i].id || a[i].start !== b[i].start || a[i].end !== b[i].end) {
+        return false
+      }
+    }
+    
+    return true
+  }
+
+  // Store editor reference for potential future use
+  useEffect(() => {
+    editorRef.current = editor
+  }, [editor])
+
+  // Update extension when suggestions change
+  useEffect(() => {
+    if (editor) {
+      // Force update of the suggestion extension with new suggestions
+      const suggestionExtension = editor.extensionManager.extensions.find(
+        (ext) => ext.name === 'suggestions'
+      )
+      
+      if (suggestionExtension) {
+        suggestionExtension.options.suggestions = suggestions
+        
+        // Force a re-render of decorations by dispatching an empty transaction
+        const { tr } = editor.state
+        editor.view.dispatch(tr)
+      }
+    }
+  }, [suggestions, editor])
 
   // Sync content when it changes externally
   useEffect(() => {
@@ -210,6 +336,11 @@ export function TiptapEditor({
         <div className="text-xs text-gray-500 flex items-center">
           <span>Enter: New paragraph • Shift+Enter: Line break</span>
         </div>
+        
+        {/* Debug info for Milestone 2 */}
+        <div className="ml-4 text-xs text-blue-600 flex items-center">
+          <span>Active suggestions: {suggestions.length}</span>
+        </div>
       </div>
 
       {/* Editor Content */}
@@ -309,6 +440,19 @@ export function TiptapEditor({
           padding: 0.125rem 0.25rem !important;
           border-radius: 0.25rem !important;
           font-size: 0.875em !important;
+        }
+
+        /* Suggestion highlight styling */
+        .suggestion-highlight {
+          background-color: #fef3c7 !important;
+          border-bottom: 2px solid #f59e0b !important;
+          border-radius: 2px !important;
+          cursor: pointer !important;
+          transition: background-color 0.2s ease !important;
+        }
+        
+        .suggestion-highlight:hover {
+          background-color: #fde68a !important;
         }
       `}</style>
     </div>
