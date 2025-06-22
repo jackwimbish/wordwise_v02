@@ -28,6 +28,7 @@ interface TiptapEditorProps {
   placeholder?: string
   editable?: boolean
   documentId?: string
+  onReadabilityTextChange?: (text: string) => void
 }
 
 // Helper function to create a simple hash of text content
@@ -73,7 +74,8 @@ export function TiptapEditor({
   onUpdate, 
   placeholder = 'Start writing...', 
   editable = true,
-  documentId
+  documentId,
+  onReadabilityTextChange
 }: TiptapEditorProps) {
   // State for live suggestions from backend
   const [suggestions, setSuggestions] = useState<SuggestionResponse[]>([])
@@ -101,6 +103,7 @@ export function TiptapEditor({
   const pendingTransactions = useRef<StoredTransaction[]>([])
   const analysisInProgress = useRef(false)
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const readabilityDebounceRef = useRef<NodeJS.Timeout | null>(null)
   const apiCallDocState = useRef<string | null>(null)
   const currentAbortController = useRef<AbortController | null>(null)
   const hasInitialAnalysisRun = useRef(false)
@@ -478,7 +481,7 @@ export function TiptapEditor({
         }, 100) // Shorter delay for follow-up analysis
       }
     }
-              }, [documentId, apiClient, extractParagraphs, updateParagraphStates])
+  }, [documentId, apiClient, extractParagraphs, updateParagraphStates])
 
   // Fixed function that extracts FRESH paragraphs when debounce executes (not when timer is set)
   // NOTE: ESLint warning about missing 'paragraphs' dependency is INTENTIONAL and safe to ignore.
@@ -663,8 +666,6 @@ export function TiptapEditor({
     }
   }, [handlePopupClose])
 
-
-
   // Handle suggestion dismiss (Phase 4)
   const handleDismissSuggestion = useCallback(async (suggestion: SuggestionResponse) => {
     console.log('❌ Dismiss suggestion:', suggestion.original_text)
@@ -847,6 +848,18 @@ export function TiptapEditor({
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
       onUpdate(editor.getHTML())
+      
+      // Update readability text with debouncing
+      if (onReadabilityTextChange) {
+        if (readabilityDebounceRef.current) {
+          clearTimeout(readabilityDebounceRef.current)
+        }
+        
+        readabilityDebounceRef.current = setTimeout(() => {
+          const text = editor.getText()
+          onReadabilityTextChange(text)
+        }, 250) // 250ms debounce as recommended in the doc
+      }
     },
     // Milestone 3: Enhanced onTransaction for paragraph tracking and stale state management
     onTransaction: ({ editor, transaction }) => {
@@ -1071,6 +1084,14 @@ export function TiptapEditor({
     editorRef.current = editor
   }, [editor])
 
+  // Initialize readability text when editor is available
+  useEffect(() => {
+    if (editor && onReadabilityTextChange) {
+      const text = editor.getText()
+      onReadabilityTextChange(text)
+    }
+  }, [editor, onReadabilityTextChange])
+
   // Cleanup: Cancel any ongoing analysis when component unmounts
   useEffect(() => {
     return () => {
@@ -1079,6 +1100,9 @@ export function TiptapEditor({
       }
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current)
+      }
+      if (readabilityDebounceRef.current) {
+        clearTimeout(readabilityDebounceRef.current)
       }
     }
   }, [])

@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAppStore } from '@/lib/store'
 import { TiptapEditor } from '@/components/editor/TiptapEditor'
+import { ReadabilityScore } from '@/components/editor/ReadabilityScore'
+import { PageCount } from '@/components/editor/PageCount'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Navbar } from '@/components/navigation/Navbar'
@@ -32,6 +34,7 @@ export default function DocumentPage() {
   const [titleValue, setTitleValue] = useState('')
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null)
+  const [readabilityText, setReadabilityText] = useState('')
   const loadedDocumentId = useRef<string | null>(null)
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -234,7 +237,17 @@ export default function DocumentPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <Navbar />
       
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="flex min-h-[calc(100vh-4rem)]">
+        {/* Left Panel - Analysis Tools */}
+        <div className="w-80 flex-shrink-0 p-4 bg-white/50 border-r border-gray-200">
+          <div className="sticky top-4 space-y-4">
+            <ReadabilityScore text={readabilityText} />
+            <PageCount text={readabilityText} />
+          </div>
+        </div>
+        
+        {/* Main Content */}
+        <div className="flex-1 px-4 py-8 max-w-4xl mx-auto">
         {/* Document Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -334,15 +347,17 @@ export default function DocumentPage() {
           </div>
         </div>
 
-        {/* Editor */}
-        <Card className="p-0 overflow-hidden">
-          <TiptapEditor
-            content={currentDocument.content}
-            onUpdate={updateCurrentDocumentContent}
-            placeholder="Start writing your document..."
-            documentId={currentDocument.id}
-          />
-        </Card>
+          {/* Editor */}
+          <Card className="p-0 overflow-hidden">
+            <TiptapEditor
+              content={currentDocument.content}
+              onUpdate={updateCurrentDocumentContent}
+              onReadabilityTextChange={setReadabilityText}
+              placeholder="Start writing your document..."
+              documentId={currentDocument.id}
+            />
+          </Card>
+        </div>
       </div>
     </div>
   )
