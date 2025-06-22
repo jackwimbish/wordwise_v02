@@ -2,6 +2,7 @@
 
 import os
 import asyncio
+import re
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ import sentry_sdk
 from openai import AsyncOpenAI
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from bs4 import BeautifulSoup
 
 from ..database import get_db_session
 from ..auth import get_current_user_profile
@@ -86,7 +88,7 @@ def determine_mode(current_length: int, target_length: int) -> str:
         return "shorten"  # Default to shorten and process anyway
 
 
-def validate_target_length(target_length: int, unit: str, text: str) -> None:
+def validate_target_length(target_length: int, unit: str, content: str) -> None:
     """Validate target length and raise HTTPException if invalid."""
     # Basic validation for invalid values
     if target_length <= 0:
@@ -118,15 +120,18 @@ def validate_target_length(target_length: int, unit: str, text: str) -> None:
             detail=f"Target length too small. Minimum is {MIN_REASONABLE_LENGTH[unit.lower()]} {unit}"
         )
     
-    # Validate text is not empty
-    if not text or not text.strip():
+    # Validate content is not empty
+    if not content or not content.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please write some content before using length tools"
         )
     
+    # Extract text from content (handle both HTML and plain text)
+    text_content = extract_text_from_html(content) if ('<' in content and '>' in content) else content
+    
     # Validate text is long enough to be meaningful
-    current_length = get_text_length(text, unit)
+    current_length = get_text_length(text_content, unit)
     if current_length < MIN_REASONABLE_LENGTH[unit.lower()]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,71 +139,117 @@ def validate_target_length(target_length: int, unit: str, text: str) -> None:
         )
 
 
-def split_into_paragraphs(text: str) -> List[str]:
-    """Split text into paragraphs, filtering out empty ones."""
-    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-    return paragraphs
+def extract_text_from_html(html: str) -> str:
+    """Extract plain text from HTML content."""
+    soup = BeautifulSoup(html, 'html.parser')
+    return soup.get_text()
 
 
-def create_rewrite_prompt(paragraph: str, target_length: int, unit: str, mode: str) -> str:
-    """Create a prompt for rewriting a paragraph."""
-    current_length = get_text_length(paragraph, unit)
+def split_into_paragraphs(content: str) -> List[dict]:
+    """
+    Split content into paragraphs, preserving HTML structure.
+    Returns list of dicts with 'html' and 'text' keys.
+    """
+    # Check if content is HTML (contains HTML tags)
+    if '<' in content and '>' in content:
+        # Parse HTML content
+        soup = BeautifulSoup(content, 'html.parser')
+        paragraphs = []
+        
+        # Extract all block-level elements that represent paragraphs
+        for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote']):
+            html_content = str(element)
+            text_content = element.get_text().strip()
+            
+            if text_content:  # Only include non-empty paragraphs
+                paragraphs.append({
+                    'html': html_content,
+                    'text': text_content
+                })
+        
+        # If no block elements found, treat the whole content as one paragraph
+        if not paragraphs:
+            text_content = soup.get_text().strip()
+            if text_content:
+                paragraphs.append({
+                    'html': f'<p>{content}</p>',
+                    'text': text_content
+                })
+        
+        return paragraphs
+    else:
+        # Plain text content - split on double newlines
+        text_paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        return [
+            {
+                'html': f'<p>{p}</p>',
+                'text': p
+            }
+            for p in text_paragraphs
+        ]
+
+
+def create_rewrite_prompt(paragraph_html: str, paragraph_text: str, target_length: int, unit: str, mode: str) -> str:
+    """Create a prompt for rewriting a paragraph while preserving HTML formatting."""
+    current_length = get_text_length(paragraph_text, unit)
+    
+    base_instructions = f"""You are a precise text editor. Your task is to rewrite the following content while preserving all HTML formatting.
+
+IMPORTANT: You must maintain the exact HTML structure and tags. Only change the text content within the tags.
+
+The original length is {current_length} {unit}. The target length is approximately {target_length} {unit}."""
     
     if mode.lower() == "shorten":
-        return f"""You are a precise text editor. Your task is to shorten the following paragraph. 
-
-The original length is {current_length} {unit}. The target length is approximately {target_length} {unit}. 
-
-Preserve the core meaning, tone, and key details. Do not add any new information or commentary. Focus on removing redundancy, simplifying complex sentences, and using more concise language.
-
-Original Paragraph: "{paragraph}"
-
-Return only the rewritten paragraph, no additional text or explanation."""
+        specific_instructions = """
+Your goal is to shorten the content. Preserve the core meaning, tone, and key details. Do not add any new information or commentary. Focus on removing redundancy, simplifying complex sentences, and using more concise language."""
     
     elif mode.lower() == "lengthen":
-        return f"""You are an eloquent text editor. Your task is to expand the following paragraph.
-
-The original length is {current_length} {unit}. The target length is approximately {target_length} {unit}.
-
-Elaborate on the existing points with more descriptive detail, examples, or clarification. Do not introduce new topics or change the core meaning. Add depth and richness while maintaining the original tone and style.
-
-Original Paragraph: "{paragraph}"
-
-Return only the rewritten paragraph, no additional text or explanation."""
+        specific_instructions = """
+Your goal is to expand the content. Elaborate on the existing points with more descriptive detail, examples, or clarification. Do not introduce new topics or change the core meaning. Add depth and richness while maintaining the original tone and style."""
     
     else:
         raise ValueError(f"Invalid mode: {mode}. Must be 'shorten' or 'lengthen'")
+    
+    return f"""{base_instructions}
+
+{specific_instructions}
+
+Original Content: {paragraph_html}
+
+Return only the rewritten content with preserved HTML formatting, no additional text or explanation."""
 
 
-def create_retry_prompt(original: str, previous: str, target_length: int, unit: str, mode: str) -> str:
+def create_retry_prompt(original_html: str, original_text: str, previous: str, target_length: int, unit: str, mode: str) -> str:
     """Create a prompt for retrying a paragraph rewrite with a different approach."""
-    current_length = get_text_length(original, unit)
+    current_length = get_text_length(original_text, unit)
     action = "shorten" if mode.lower() == "shorten" else "expand"
     
-    return f"""You are a skilled text editor. Rewrite the following paragraph to {action} it to approximately {target_length} {unit}.
+    return f"""You are a skilled text editor. Rewrite the following content to {action} it to approximately {target_length} {unit}.
+
+IMPORTANT: You must maintain the exact HTML structure and tags. Only change the text content within the tags.
 
 The original length is {current_length} {unit}. Provide a new version that is substantially different from the previous suggestion while maintaining the same core meaning and tone.
 
-Original Paragraph: "{original}"
+Original Content: {original_html}
 
 Previous Suggestion (avoid this approach): "{previous}"
 
-Create a fresh rewrite that takes a different stylistic or structural approach. Return only the rewritten paragraph, no additional text or explanation."""
+Create a fresh rewrite that takes a different stylistic or structural approach. Return only the rewritten content with preserved HTML formatting, no additional text or explanation."""
 
 
-async def rewrite_paragraph_with_llm(paragraph: str, target_length: int, unit: str, mode: str) -> str:
-    """Rewrite a single paragraph using OpenAI."""
+async def rewrite_paragraph_with_llm(paragraph_html: str, paragraph_text: str, target_length: int, unit: str, mode: str) -> str:
+    """Rewrite a single paragraph using OpenAI while preserving HTML formatting."""
     try:
         with sentry_sdk.start_span(
             op="llm.rewrite_paragraph",
-            description=f"Rewrite paragraph ({len(paragraph)} chars, {mode} to {target_length} {unit})"
+            description=f"Rewrite paragraph ({len(paragraph_text)} chars, {mode} to {target_length} {unit})"
         ) as span:
-            set_span_attribute(span, "paragraph_length", len(paragraph))
+            set_span_attribute(span, "paragraph_length", len(paragraph_text))
             set_span_attribute(span, "target_length", target_length)
             set_span_attribute(span, "unit", unit)
             set_span_attribute(span, "mode", mode)
             
-            prompt = create_rewrite_prompt(paragraph, target_length, unit, mode)
+            prompt = create_rewrite_prompt(paragraph_html, paragraph_text, target_length, unit, mode)
             
             response = await openai_client.chat.completions.create(
                 model=OPENAI_MODEL,
@@ -212,7 +263,7 @@ async def rewrite_paragraph_with_llm(paragraph: str, target_length: int, unit: s
             rewritten = response.choices[0].message.content
             if not rewritten:
                 set_span_attribute(span, "error", "Empty response from LLM")
-                return paragraph  # Return original if no response
+                return paragraph_html  # Return original if no response
             
             rewritten = rewritten.strip()
             set_span_attribute(span, "rewritten_length", len(rewritten))
@@ -220,22 +271,22 @@ async def rewrite_paragraph_with_llm(paragraph: str, target_length: int, unit: s
             
     except Exception as e:
         sentry_sdk.capture_exception(e)
-        return paragraph  # Return original paragraph on error
+        return paragraph_html  # Return original paragraph on error
 
 
-async def retry_paragraph_rewrite(original: str, previous: str, target_length: int, unit: str, mode: str) -> str:
-    """Retry rewriting a paragraph with a different approach."""
+async def retry_paragraph_rewrite(original_html: str, original_text: str, previous: str, target_length: int, unit: str, mode: str) -> str:
+    """Retry rewriting a paragraph with a different approach while preserving HTML formatting."""
     try:
         with sentry_sdk.start_span(
             op="llm.retry_rewrite",
-            description=f"Retry paragraph rewrite ({len(original)} chars)"
+            description=f"Retry paragraph rewrite ({len(original_text)} chars)"
         ) as span:
-            set_span_attribute(span, "original_length", len(original))
+            set_span_attribute(span, "original_length", len(original_text))
             set_span_attribute(span, "target_length", target_length)
             set_span_attribute(span, "unit", unit)
             set_span_attribute(span, "mode", mode)
             
-            prompt = create_retry_prompt(original, previous, target_length, unit, mode)
+            prompt = create_retry_prompt(original_html, original_text, previous, target_length, unit, mode)
             
             response = await openai_client.chat.completions.create(
                 model=OPENAI_MODEL,
@@ -249,7 +300,7 @@ async def retry_paragraph_rewrite(original: str, previous: str, target_length: i
             rewritten = response.choices[0].message.content
             if not rewritten:
                 set_span_attribute(span, "error", "Empty response from LLM")
-                return original  # Return original if no response
+                return original_html  # Return original if no response
             
             rewritten = rewritten.strip()
             set_span_attribute(span, "rewritten_length", len(rewritten))
@@ -257,17 +308,17 @@ async def retry_paragraph_rewrite(original: str, previous: str, target_length: i
             
     except Exception as e:
         sentry_sdk.capture_exception(e)
-        return original  # Return original paragraph on error
+        return original_html  # Return original paragraph on error
 
 
 def calculate_paragraph_target_length(
-    paragraph: str, 
+    paragraph_text: str, 
     original_doc_length: int, 
     target_doc_length: int, 
     unit: str
 ) -> int:
     """Calculate target length for a specific paragraph based on document-level target."""
-    paragraph_length = get_text_length(paragraph, unit)
+    paragraph_length = get_text_length(paragraph_text, unit)
     
     # Calculate the proportion this paragraph represents in the original document
     proportion = paragraph_length / original_doc_length if original_doc_length > 0 else 0
@@ -317,14 +368,17 @@ async def rewrite_for_length(
             detail="Document not found or access denied"
         )
     
+    # Extract text content for length calculation
+    text_content = extract_text_from_html(request_data.full_text) if ('<' in request_data.full_text and '>' in request_data.full_text) else request_data.full_text
+    
     # Calculate current document length
-    original_length = get_text_length(request_data.full_text, request_data.unit)
+    original_length = get_text_length(text_content, request_data.unit)
     target_length = request_data.target_length
     
     # Determine mode automatically if not provided
     mode = request_data.mode if request_data.mode else determine_mode(original_length, target_length)
     
-    # Split into paragraphs
+    # Split into paragraphs (returns list of dicts with 'html' and 'text' keys)
     paragraphs = split_into_paragraphs(request_data.full_text)
     
     if not paragraphs:
@@ -333,10 +387,11 @@ async def rewrite_for_length(
             detail="No paragraphs found in document"
         )
     
-    # Filter paragraphs that are too short or too long
+    # Filter paragraphs that are too short or too long (check text length)
     processable_paragraphs = []
     for i, paragraph in enumerate(paragraphs):
-        if MIN_PARAGRAPH_LENGTH <= len(paragraph) <= MAX_PARAGRAPH_LENGTH:
+        text_length = len(paragraph['text'])
+        if MIN_PARAGRAPH_LENGTH <= text_length <= MAX_PARAGRAPH_LENGTH:
             processable_paragraphs.append((i, paragraph))
     
     if not processable_paragraphs:
@@ -347,21 +402,26 @@ async def rewrite_for_length(
     
     # Create rewrite tasks for concurrent processing
     async def rewrite_single_paragraph(paragraph_data):
-        paragraph_id, paragraph_text = paragraph_data
+        paragraph_id, paragraph = paragraph_data
+        paragraph_html = paragraph['html']
+        paragraph_text = paragraph['text']
         
         # Calculate target length for this specific paragraph
         paragraph_target = calculate_paragraph_target_length(
             paragraph_text, original_length, target_length, request_data.unit
         )
         
-        rewritten_text = await rewrite_paragraph_with_llm(
-            paragraph_text, paragraph_target, request_data.unit, mode
+        rewritten_html = await rewrite_paragraph_with_llm(
+            paragraph_html, paragraph_text, paragraph_target, request_data.unit, mode
         )
+        
+        # Extract text from rewritten HTML for length calculation
+        rewritten_text = extract_text_from_html(rewritten_html) if ('<' in rewritten_html and '>' in rewritten_html) else rewritten_html
         
         return ParagraphRewrite(
             paragraph_id=paragraph_id,
-            original_text=paragraph_text,
-            rewritten_text=rewritten_text,
+            original_text=paragraph_html,  # Store HTML to preserve formatting
+            rewritten_text=rewritten_html,  # Store HTML to preserve formatting
             original_length=get_text_length(paragraph_text, request_data.unit),
             rewritten_length=get_text_length(rewritten_text, request_data.unit)
         )
@@ -420,34 +480,41 @@ async def retry_rewrite(
             detail="Unit must be 'words' or 'characters'"
         )
     
+    # Extract text content from HTML if needed
+    original_text = extract_text_from_html(request_data.original_paragraph) if ('<' in request_data.original_paragraph and '>' in request_data.original_paragraph) else request_data.original_paragraph
+    
     # Determine mode automatically if not provided
-    current_length = get_text_length(request_data.original_paragraph, request_data.unit)
+    current_length = get_text_length(original_text, request_data.unit)
     mode = request_data.mode if request_data.mode else determine_mode(current_length, request_data.target_length)
     
-    # Validate paragraph length
-    if len(request_data.original_paragraph) > MAX_PARAGRAPH_LENGTH:
+    # Validate paragraph length (check text content)
+    if len(original_text) > MAX_PARAGRAPH_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Paragraph too long (max {MAX_PARAGRAPH_LENGTH} characters)"
         )
     
-    if len(request_data.original_paragraph) < MIN_PARAGRAPH_LENGTH:
+    if len(original_text) < MIN_PARAGRAPH_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Paragraph too short (min {MIN_PARAGRAPH_LENGTH} characters)"
         )
     
-    # Perform the retry rewrite
-    rewritten_text = await retry_paragraph_rewrite(
-        request_data.original_paragraph,
+    # Perform the retry rewrite (pass both HTML and text)
+    rewritten_html = await retry_paragraph_rewrite(
+        request_data.original_paragraph,  # HTML version
+        original_text,  # Text version
         request_data.previous_suggestion,
         request_data.target_length,
         request_data.unit,
         mode
     )
     
+    # Extract text from rewritten HTML for length calculation
+    rewritten_text = extract_text_from_html(rewritten_html) if ('<' in rewritten_html and '>' in rewritten_html) else rewritten_html
+    
     return RetryRewriteResponse(
-        rewritten_text=rewritten_text,
-        original_length=get_text_length(request_data.original_paragraph, request_data.unit),
+        rewritten_text=rewritten_html,  # Return HTML to preserve formatting
+        original_length=get_text_length(original_text, request_data.unit),
         rewritten_length=get_text_length(rewritten_text, request_data.unit)
     ) 

@@ -25,6 +25,19 @@ export function RewriteSuggestionCard({
   isRetrying = false
 }: RewriteSuggestionCardProps) {
 
+  // Extract text content from HTML for display purposes
+  const getTextContent = (htmlContent: string): string => {
+    if (htmlContent.includes('<') && htmlContent.includes('>')) {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(htmlContent, 'text/html')
+      return doc.body.textContent || htmlContent
+    }
+    return htmlContent
+  }
+
+  const originalTextDisplay = getTextContent(rewrite.original_text)
+  const rewrittenTextDisplay = getTextContent(rewrite.rewritten_text)
+
   const handleAccept = () => {
     onAccept(rewrite.paragraph_id, rewrite.rewritten_text, rewrite.original_text)
   }
@@ -65,11 +78,11 @@ export function RewriteSuggestionCard({
           <div className="text-sm">
             <div className="bg-red-50 border-l-4 border-red-200 p-3">
               <div className="text-red-800 font-medium mb-1">Original:</div>
-              <div className="text-red-900 whitespace-pre-wrap">{rewrite.original_text}</div>
+              <div className="text-red-900 whitespace-pre-wrap">{originalTextDisplay}</div>
             </div>
             <div className="bg-green-50 border-l-4 border-green-200 p-3">
               <div className="text-green-800 font-medium mb-1">Rewritten:</div>
-              <div className="text-green-900 whitespace-pre-wrap">{rewrite.rewritten_text}</div>
+              <div className="text-green-900 whitespace-pre-wrap">{rewrittenTextDisplay}</div>
             </div>
           </div>
         </div>

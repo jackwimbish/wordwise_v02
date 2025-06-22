@@ -219,50 +219,68 @@ export default function DocumentPage() {
   const handleAcceptRewrite = useCallback((paragraphId: number, rewrittenText: string, originalText?: string) => {
     console.log(`Accepting rewrite for paragraph ${paragraphId}`, { rewrittenText, originalText })
     
-    // Update the document content by finding and replacing the paragraph
-    if (currentDocument && originalText) {
-      const currentContent = currentDocument.content
-      const originalTrimmed = originalText.trim()
+    // Use the TipTap editor to handle HTML content replacement
+    if (editorInstance && originalText && rewrittenText) {
+      const currentHTML = editorInstance.getHTML()
       
-      // Try to find and replace the original text with the rewritten text
-      let updatedContent = currentContent
+      // Try to replace the original HTML with the rewritten HTML
+      // Both originalText and rewrittenText should now be HTML content
+      const updatedHTML = currentHTML.replace(originalText, rewrittenText)
       
-      // First try exact match
-      if (currentContent.includes(originalTrimmed)) {
-        updatedContent = currentContent.replace(originalTrimmed, rewrittenText.trim())
-      } else {
-        // If exact match fails, try to find by paragraph splitting
-        const paragraphs = currentContent.split('\n\n')
+      if (updatedHTML !== currentHTML) {
+        // Set the new HTML content in the editor
+        editorInstance.commands.setContent(updatedHTML, false)
         
-        // Find the paragraph by index or content similarity
-        if (paragraphId < paragraphs.length) {
-          const targetParagraph = paragraphs[paragraphId]
+        // Update the document content with the new HTML
+        updateCurrentDocumentContent(updatedHTML)
+        
+        // Update readability text
+        setTimeout(() => {
+          const currentText = editorInstance.getText()
+          setReadabilityText(currentText)
+          console.log('✅ Successfully updated document content with HTML formatting preserved')
+        }, 50)
+      } else {
+        console.warn('⚠️ Could not find paragraph to update in document HTML')
+        
+        // Fallback: try to find and replace by extracting text content
+        const parser = new DOMParser()
+        const originalDoc = parser.parseFromString(originalText, 'text/html')
+        const rewrittenDoc = parser.parseFromString(rewrittenText, 'text/html')
+        const originalTextContent = originalDoc.body.textContent || ''
+        const rewrittenTextContent = rewrittenDoc.body.textContent || ''
+        
+        if (originalTextContent && rewrittenTextContent) {
+          const currentContent = currentDocument?.content || ''
+          const updatedContent = currentContent.replace(originalTextContent, rewrittenTextContent)
           
-          // Check if this paragraph matches or is similar to the original
-          if (targetParagraph.trim() === originalTrimmed || 
-              (targetParagraph.length > 10 && originalTrimmed.includes(targetParagraph.slice(0, 20))) ||
-              (originalTrimmed.length > 10 && targetParagraph.includes(originalTrimmed.slice(0, 20)))) {
-            paragraphs[paragraphId] = rewrittenText.trim()
-            updatedContent = paragraphs.join('\n\n')
+          if (updatedContent !== currentContent) {
+            updateCurrentDocumentContent(updatedContent)
+            console.log('✅ Fallback: Updated document content using text replacement')
           }
         }
       }
+    } else if (currentDocument && originalText) {
+      // Fallback for when editor is not available - use the old text-based approach
+      const currentContent = currentDocument.content
       
-      // Update the document content
+      // Extract text content if we have HTML
+      let originalTextContent = originalText
+      let rewrittenTextContent = rewrittenText
+      
+      if (originalText.includes('<') && originalText.includes('>')) {
+        const parser = new DOMParser()
+        const originalDoc = parser.parseFromString(originalText, 'text/html')
+        const rewrittenDoc = parser.parseFromString(rewrittenText, 'text/html')
+        originalTextContent = originalDoc.body.textContent || originalText
+        rewrittenTextContent = rewrittenDoc.body.textContent || rewrittenText
+      }
+      
+      const updatedContent = currentContent.replace(originalTextContent, rewrittenTextContent)
+      
       if (updatedContent !== currentContent) {
         updateCurrentDocumentContent(updatedContent)
-        
-        // Force immediate readability text update if editor is available
-        if (editorInstance) {
-          // Small delay to let TipTap process the content update first
-          setTimeout(() => {
-            const currentText = editorInstance.getText()
-            setReadabilityText(currentText)
-            console.log('✅ Successfully updated document content and forced readability text update')
-          }, 50)
-        } else {
-          console.log('✅ Successfully updated document content (readability text will update via debounce)')
-        }
+        console.log('✅ Fallback: Updated document content without editor')
       } else {
         console.warn('⚠️ Could not find paragraph to update in document')
       }

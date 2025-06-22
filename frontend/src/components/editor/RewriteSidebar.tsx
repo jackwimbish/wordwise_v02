@@ -147,18 +147,22 @@ export function RewriteSidebar({
       return
     }
 
-    // Get real-time text content from editor if available, fallback to documentContent
-    let currentText: string
+    // Get real-time HTML content from editor if available, fallback to documentContent
+    let currentContent: string
     if (editorInstance) {
-      currentText = editorInstance.getText()
-      console.log('📝 Using real-time text from editor:', currentText.slice(0, 100) + '...')
+      currentContent = editorInstance.getHTML()
+      console.log('📝 Using real-time HTML from editor:', currentContent.slice(0, 100) + '...')
     } else if (documentContent) {
-      currentText = documentContent
-      console.log('⚠️ Fallback to documentContent (may be stale):', currentText.slice(0, 100) + '...')
+      // documentContent is plain text, so we need to wrap it in basic HTML
+      currentContent = `<p>${documentContent.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`
+      console.log('⚠️ Fallback to documentContent converted to HTML:', currentContent.slice(0, 100) + '...')
     } else {
       alert('No document content available')
       return
     }
+
+    // Extract plain text for length validation
+    const currentText = editorInstance ? editorInstance.getText() : documentContent || ''
 
     if (!currentText.trim()) {
       alert('Please write some content before using length tools')
@@ -187,7 +191,7 @@ export function RewriteSidebar({
 
       const request: LengthRewriteRequest = {
         document_id: documentId,
-        full_text: currentText,
+        full_text: currentContent,
         target_length: actualTargetLength,
         unit: actualUnit
         // mode will be determined automatically by the backend
