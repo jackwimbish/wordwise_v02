@@ -476,8 +476,7 @@ export function TiptapEditor({
         }, 100) // Shorter delay for follow-up analysis
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-              }, [documentId, apiClient, extractParagraphs])
+              }, [documentId, apiClient, extractParagraphs, paragraphs])
 
   // Wrapper function that gets dirty paragraphs from state and calls performAnalysis
   const analyzeDirtyParagraphs = useCallback(async () => {
@@ -497,8 +496,7 @@ export function TiptapEditor({
     
     // Call the core analysis function
     await performAnalysis(dirtyParagraphs)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [performAnalysis])
+  }, [performAnalysis, paragraphs, documentId, apiClient])
 
   // Debounced analysis trigger
   const triggerAnalysis = useCallback(() => {
