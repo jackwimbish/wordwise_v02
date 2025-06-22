@@ -147,6 +147,41 @@ class ApiClient {
     return await response.json()
   }
 
+  // Document Export
+  async exportDocument(title: string, content: string, format: 'txt' | 'docx' | 'pdf'): Promise<{ blob: Blob; filename: string }> {
+    const token = await this.getAuthToken()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${this.baseURL}/api/v1/export/file`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        title,
+        content,
+        format,
+      }),
+      signal: AbortSignal.timeout(60000), // 60 second timeout for file generation
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+
+    // Return blob and filename for download
+    const blob = await response.blob()
+    const contentDisposition = response.headers.get('content-disposition')
+    const filename = contentDisposition?.match(/filename="(.+)"/)?.[1] || `document.${format}`
+    
+    return { blob, filename }
+  }
+
   // Suggestions
   async analyzeParagraphs(data: ParagraphAnalysisRequest, signal?: AbortSignal): Promise<SuggestionAnalysisResponse> {
     return this.request<SuggestionAnalysisResponse>('/api/v1/suggestions/analyze', {

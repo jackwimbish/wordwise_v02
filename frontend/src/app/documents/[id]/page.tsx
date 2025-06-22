@@ -7,6 +7,7 @@ import { TiptapEditor } from '@/components/editor/TiptapEditor'
 import { ReadabilityScore } from '@/components/editor/ReadabilityScore'
 import { PageCount } from '@/components/editor/PageCount'
 import { RewriteSidebar } from '@/components/editor/RewriteSidebar'
+import { ExportButton } from '@/components/editor/ExportButton'
 import { PageCountSettings, DEFAULT_PAGE_SETTINGS } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -463,6 +464,12 @@ export default function DocumentPage() {
                   Auto-saved {lastAutoSave.toLocaleTimeString()}
                 </span>
               )}
+              
+              <ExportButton 
+                title={currentDocument.title}
+                content={currentDocument.content}
+                disabled={currentDocumentSaving || isAutoSaving}
+              />
               
               <Button 
                 onClick={handleSave}

@@ -33,6 +33,7 @@ interface AppState {
   refreshDocuments: () => Promise<void>
   deleteDocument: (id: string) => Promise<void>
   importDocument: (file: File) => Promise<Document>
+  exportDocument: (title: string, content: string, format: 'txt' | 'docx' | 'pdf') => Promise<void>
   
   // Document editing actions
   setCurrentDocument: (document: Document | null) => void
@@ -159,6 +160,25 @@ export const useAppStore = create<AppState>((set, get) => {
         return document
       } catch (error) {
         console.error('Failed to import document:', error)
+        throw error
+      }
+    },
+
+    exportDocument: async (title: string, content: string, format: 'txt' | 'docx' | 'pdf') => {
+      try {
+        const { blob, filename } = await apiClient.exportDocument(title, content, format)
+        
+        // Create download link and trigger download
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      } catch (error) {
+        console.error('Failed to export document:', error)
         throw error
       }
     },

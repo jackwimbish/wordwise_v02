@@ -85,13 +85,14 @@ app.add_middleware(
 # --- API Routers ---
 # As your application grows, you'll organize endpoints into separate files (routers).
 # We will include them here.
-from .routers import documents, profiles, suggestions, rewriter, import_doc
+from .routers import documents, profiles, suggestions, rewriter, import_doc, export_doc
 
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
 app.include_router(suggestions.router, prefix="/api/v1")
 app.include_router(rewriter.router, prefix="/api/v1")
 app.include_router(import_doc.router, prefix="/api/v1")
+app.include_router(export_doc.router, prefix="/api/v1")
 
 
 # --- Root Endpoint / Health Check ---
