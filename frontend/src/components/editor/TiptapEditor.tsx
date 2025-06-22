@@ -481,6 +481,11 @@ export function TiptapEditor({
               }, [documentId, apiClient, extractParagraphs, updateParagraphStates])
 
   // Fixed function that extracts FRESH paragraphs when debounce executes (not when timer is set)
+  // NOTE: ESLint warning about missing 'paragraphs' dependency is INTENTIONAL and safe to ignore.
+  // We deliberately omit 'paragraphs' from dependencies because:
+  // 1. We extract FRESH paragraphs inside this function (not stale state from when timer was set)
+  // 2. This fixes the timing issue where last typed character was missing from analysis
+  // 3. The old approach caused race conditions - this new approach ensures data integrity
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const analyzeDirtyParagraphs = useCallback(async () => {
     console.log('📊 analyzeDirtyParagraphs called:', {
