@@ -10,13 +10,17 @@ from sqlalchemy.orm import selectinload
 
 from ..database import get_db_session
 from ..auth import get_current_user
-from ..models import Document, Profile
+from ..models import Document, Profile, DocumentVersion
 from ..schemas import (
     DocumentCreate,
     DocumentUpdate,
     DocumentResponse,
     DocumentListItem,
-    DocumentListResponse
+    DocumentListResponse,
+    DocumentVersionResponse,
+    DocumentVersionListResponse,
+    RestoreVersionRequest,
+    RestoreVersionResponse
 )
 
 
@@ -149,6 +153,7 @@ async def update_document(
     """
     Update a specific document by ID.
     Only allows updating documents owned by the authenticated user.
+    Automatically creates a version history entry before updating.
     """
     # Get the document
     result = await db.execute(
@@ -166,11 +171,20 @@ async def update_document(
             detail="Document not found"
         )
     
+    # Archive the current version before updating
+    if document.content is not None:  # Only create version if there's existing content
+        version = DocumentVersion(
+            document_id=document.id,
+            content=document.content
+        )
+        db.add(version)
+    
     # Update fields that were provided
     update_data = document_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(document, field, value)
     
+    # Commit both the version and the document update atomically
     await db.commit()
     await db.refresh(document)
     
@@ -206,4 +220,163 @@ async def delete_document(
     await db.delete(document)
     await db.commit()
     
-    # Return 204 No Content (no response body for successful deletion) 
+    # Return 204 No Content (no response body for successful deletion)
+
+
+# === Version History Endpoints ===
+
+@router.get("/{document_id}/versions", response_model=DocumentVersionListResponse)
+async def list_document_versions(
+    document_id: UUID,
+    current_user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Get all versions of a specific document.
+    Only returns versions for documents owned by the authenticated user.
+    """
+    # First verify the user owns this document
+    document_result = await db.execute(
+        select(Document.id)
+        .where(
+            Document.id == document_id,
+            Document.profile_id == current_user_id
+        )
+    )
+    document = document_result.scalar_one_or_none()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    # Get all versions for this document
+    versions_result = await db.execute(
+        select(DocumentVersion)
+        .where(DocumentVersion.document_id == document_id)
+        .order_by(DocumentVersion.saved_at.desc())
+    )
+    versions = versions_result.scalars().all()
+    
+    # Convert to response format
+    version_responses = [
+        DocumentVersionResponse.model_validate(version)
+        for version in versions
+    ]
+    
+    return DocumentVersionListResponse(
+        versions=version_responses,
+        total=len(version_responses)
+    )
+
+
+@router.get("/{document_id}/versions/{version_id}", response_model=DocumentVersionResponse)
+async def get_document_version(
+    document_id: UUID,
+    version_id: UUID,
+    current_user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Get a specific version of a document.
+    Only returns versions for documents owned by the authenticated user.
+    """
+    # First verify the user owns this document
+    document_result = await db.execute(
+        select(Document.id)
+        .where(
+            Document.id == document_id,
+            Document.profile_id == current_user_id
+        )
+    )
+    document = document_result.scalar_one_or_none()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    # Get the specific version
+    version_result = await db.execute(
+        select(DocumentVersion)
+        .where(
+            DocumentVersion.id == version_id,
+            DocumentVersion.document_id == document_id
+        )
+    )
+    version = version_result.scalar_one_or_none()
+    
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version not found"
+        )
+    
+    return DocumentVersionResponse.model_validate(version)
+
+
+@router.post("/{document_id}/versions/{version_id}/restore", response_model=RestoreVersionResponse)
+async def restore_document_version(
+    document_id: UUID,
+    version_id: UUID,
+    current_user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Restore a document to a specific version.
+    This creates a new version with the current content before restoring.
+    """
+    # First verify the user owns this document
+    document_result = await db.execute(
+        select(Document)
+        .where(
+            Document.id == document_id,
+            Document.profile_id == current_user_id
+        )
+    )
+    document = document_result.scalar_one_or_none()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    # Get the version to restore
+    version_result = await db.execute(
+        select(DocumentVersion)
+        .where(
+            DocumentVersion.id == version_id,
+            DocumentVersion.document_id == document_id
+        )
+    )
+    version = version_result.scalar_one_or_none()
+    
+    if not version:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version not found"
+        )
+    
+    # Create a version with the current content before restoring
+    if document.content is not None:
+        current_version = DocumentVersion(
+            document_id=document.id,
+            content=document.content
+        )
+        db.add(current_version)
+    
+    # Restore the document to the version content
+    document.content = version.content
+    
+    # Commit both operations atomically
+    await db.commit()
+    await db.refresh(document)
+    
+    return RestoreVersionResponse(
+        success=True,
+        message=f"Document restored to version from {version.saved_at}",
+        document=DocumentResponse.model_validate(document)
+    ) 

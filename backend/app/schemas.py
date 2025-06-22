@@ -220,3 +220,34 @@ class RetryRewriteResponse(BaseModel):
             }]
         }
     }
+
+
+# === Document Version History Schemas ===
+
+class DocumentVersionResponse(BaseModel):
+    """Schema for returning document version data."""
+    id: UUID
+    document_id: UUID
+    content: str
+    saved_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentVersionListResponse(BaseModel):
+    """Schema for document version list response."""
+    versions: List[DocumentVersionResponse]
+    total: int
+
+
+class RestoreVersionRequest(BaseModel):
+    """Schema for restoring a document version."""
+    version_id: UUID = Field(..., description="ID of the version to restore")
+
+
+class RestoreVersionResponse(BaseModel):
+    """Schema for restore version response."""
+    success: bool = Field(..., description="Whether restore was successful")
+    message: str = Field(..., description="Success or error message")
+    document: DocumentResponse = Field(..., description="Updated document data")

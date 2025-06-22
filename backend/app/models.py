@@ -87,6 +87,13 @@ class Document(Base):
         cascade="all, delete-orphan"
     )
 
+    # A document can have many versions.
+    versions = relationship(
+        "DocumentVersion",
+        back_populates="document",
+        cascade="all, delete-orphan"
+    )
+
 class DismissedSuggestion(Base):
     """
     Stores a record of a user dismissing a specific type of suggestion
@@ -125,4 +132,26 @@ class DismissedSuggestion(Base):
             name='_profile_doc_dismissal_uc'
         ),
     )
+
+class DocumentVersion(Base):
+    """
+    Stores historical versions of a document.
+    Each time a document is updated, the previous content is archived here.
+    """
+    __tablename__ = "document_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    content = Column(Text)  # The content of the document at this point in time
+    saved_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # A version belongs to one document.
+    document = relationship("Document", back_populates="versions")
 
