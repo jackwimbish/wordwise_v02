@@ -1435,17 +1435,42 @@ export function TiptapEditor({
           font-size: 0.875em !important;
         }
 
-        /* Suggestion highlight styling */
+        /* Suggestion highlight styling - Base styles */
         .suggestion-highlight {
-          background-color: #fef3c7 !important;
-          border-bottom: 2px solid #f59e0b !important;
           border-radius: 2px !important;
           cursor: pointer !important;
           transition: background-color 0.2s ease !important;
+          border-bottom: 2px solid !important;
         }
         
-        .suggestion-highlight:hover {
-          background-color: #fde68a !important;
+        /* Grammar suggestions - Blue theme */
+        .suggestion-highlight-grammar {
+          background-color: #eff6ff !important;
+          border-bottom-color: #3b82f6 !important;
+        }
+        
+        .suggestion-highlight-grammar:hover {
+          background-color: #dbeafe !important;
+        }
+        
+        /* Spelling suggestions - Red theme */
+        .suggestion-highlight-spelling {
+          background-color: #fef2f2 !important;
+          border-bottom-color: #ef4444 !important;
+        }
+        
+        .suggestion-highlight-spelling:hover {
+          background-color: #fecaca !important;
+        }
+        
+        /* Style suggestions - Green theme */
+        .suggestion-highlight-style {
+          background-color: #f0fdf4 !important;
+          border-bottom-color: #22c55e !important;
+        }
+        
+        .suggestion-highlight-style:hover {
+          background-color: #dcfce7 !important;
         }
       `}</style>
 

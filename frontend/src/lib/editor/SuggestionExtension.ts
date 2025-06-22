@@ -89,11 +89,13 @@ function createDecorations(
           // Final validation of the range
           if (finalStart >= 0 && finalEnd <= doc.content.size && finalStart < finalEnd) {
             // Create inline decoration for highlighting the text range
+            // Add both base class and category-specific class for styling
+            const categoryClass = `${suggestionClass}-${suggestion.category}`
             const decoration = Decoration.inline(
               finalStart,
               finalEnd,
               {
-                class: suggestionClass,
+                class: `${suggestionClass} ${categoryClass}`,
                 'data-suggestion-id': suggestion.suggestion_id,
                 'data-suggestion-message': suggestion.message,
                 'data-rule-id': suggestion.rule_id,
