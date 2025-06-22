@@ -9,7 +9,11 @@ import type {
   SuggestionAnalysisResponse,
   DismissSuggestionRequest,
   DismissSuggestionResponse,
-  ClearDismissedSuggestionsResponse
+  ClearDismissedSuggestionsResponse,
+  LengthRewriteRequest,
+  LengthRewriteResponse,
+  RetryRewriteRequest,
+  RetryRewriteResponse
 } from '@/types'
 
 class ApiClient {
@@ -135,6 +139,23 @@ class ApiClient {
   async clearDismissedSuggestions(documentId: string): Promise<ClearDismissedSuggestionsResponse> {
     return this.request<ClearDismissedSuggestionsResponse>(`/api/v1/suggestions/dismissed/${documentId}`, {
       method: 'DELETE',
+    })
+  }
+
+  // Length Rewriter
+  async rewriteForLength(data: LengthRewriteRequest, signal?: AbortSignal): Promise<LengthRewriteResponse> {
+    return this.request<LengthRewriteResponse>('/api/v1/rewrite/length', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal,
+    })
+  }
+
+  async retryRewrite(data: RetryRewriteRequest, signal?: AbortSignal): Promise<RetryRewriteResponse> {
+    return this.request<RetryRewriteResponse>('/api/v1/rewrite/retry', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal,
     })
   }
 }

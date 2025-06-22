@@ -108,6 +108,47 @@ export interface AuthUser {
   }
 }
 
+// Length Rewriter Types
+export interface LengthRewriteRequest {
+  document_id: string
+  full_text: string
+  target_length: number
+  unit: 'words' | 'characters'
+  mode: 'shorten' | 'lengthen'
+}
+
+export interface ParagraphRewrite {
+  paragraph_id: number
+  original_text: string
+  rewritten_text: string
+  original_length: number
+  rewritten_length: number
+}
+
+export interface LengthRewriteResponse {
+  document_id: string
+  original_length: number
+  target_length: number
+  unit: string
+  mode: string
+  paragraph_rewrites: ParagraphRewrite[]
+  total_paragraphs: number
+}
+
+export interface RetryRewriteRequest {
+  original_paragraph: string
+  previous_suggestion: string
+  target_length: number
+  unit: 'words' | 'characters'
+  mode: 'shorten' | 'lengthen'
+}
+
+export interface RetryRewriteResponse {
+  rewritten_text: string
+  original_length: number
+  rewritten_length: number
+}
+
 // API Client Types
 export interface ApiClientConfig {
   baseURL: string
