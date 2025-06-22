@@ -94,7 +94,7 @@ export function SuggestionPopup({
 
       {/* Popup Card */}
       <div
-        className="fixed z-50 w-80 max-w-sm"
+        className="fixed z-50 w-[32rem] max-w-lg"
         style={{
           left: `${position.x}px`,
           top: `${position.y}px`,

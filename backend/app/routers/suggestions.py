@@ -8,11 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 import sentry_sdk
 from openai import AsyncOpenAI
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from ..database import get_db_session
-from ..auth import get_current_user_profile
+from ..auth import get_current_user_profile, create_rate_limit_dependency
 from ..models import Profile, Document, DismissedSuggestion
 from ..schemas import (
     ParagraphAnalysisRequest,
@@ -23,8 +21,8 @@ from ..schemas import (
     Suggestion
 )
 
-# Initialize the rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Create rate limit dependencies for different endpoints
+suggestions_rate_limit = create_rate_limit_dependency(300)  # 300 requests per hour for suggestions
 
 # Sentry SDK Compatibility Layer
 def set_span_attribute(span, key: str, value):
@@ -186,16 +184,14 @@ def select_best_position(positions: List[Tuple[int, int]], used_positions: set) 
 
 
 @router.post("/analyze", response_model=SuggestionAnalysisResponse)
-@limiter.limit("1600/hour")
 async def analyze_paragraphs(
-    request: Request,
     request_data: ParagraphAnalysisRequest,
-    current_profile: Profile = Depends(get_current_user_profile),
+    current_profile: Profile = Depends(suggestions_rate_limit),  # Use our custom rate limiter
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Analyze paragraphs for spelling, grammar, and style suggestions.
-    Rate limited to 1600 requests per hour.
+    Rate limited to 300 requests per hour per user.
     """
     # Validate request limits
     if len(request_data.paragraphs) > MAX_PARAGRAPHS_PER_REQUEST:

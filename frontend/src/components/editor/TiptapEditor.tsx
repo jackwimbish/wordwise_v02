@@ -558,31 +558,31 @@ export function TiptapEditor({
     const viewportHeight = window.innerHeight
     const viewportWidth = window.innerWidth
     const popupHeight = 300 // Increased estimate for popup height
-    const popupWidth = 320 // Popup width (w-80 = 320px)
+    const popupWidth = 512 // Popup width (w-[32rem] = 512px)
     
-    // Determine vertical position (above or below the text)
-    // For above positioning: popup bottom should be at rect.top with some margin
-    // For below positioning: popup top should be at rect.bottom with some margin
+    // Determine vertical position (below preferred, above only if necessary)
+    // Bias towards positioning below to prevent cards from extending past top of screen
     
     let popupY
-    let positionAbove = true
+    let positionAbove = false // Default to below
     
-    // Check if there's enough space above the clicked element
+    // Check space available
     const spaceAbove = rect.top
     const spaceBelow = viewportHeight - rect.bottom
     
     console.log(`📏 Space analysis: above=${spaceAbove}px, below=${spaceBelow}px, popupHeight=${popupHeight}px`)
     
-    if (spaceAbove < popupHeight + 30) { // Need extra margin for safety
-      // Not enough space above, position below
-      positionAbove = false
-      popupY = rect.bottom
-      console.log(`📍 Positioning BELOW: not enough space above (${spaceAbove}px < ${popupHeight + 30}px)`)
-    } else {
-      // Enough space above, position above
+    // Prefer positioning below unless there's insufficient space below AND sufficient space above
+    if (spaceBelow < popupHeight + 20 && spaceAbove >= popupHeight + 30) {
+      // Only position above if below won't fit AND above has good space
       positionAbove = true
       popupY = rect.top
-      console.log(`📍 Positioning ABOVE: enough space above (${spaceAbove}px >= ${popupHeight + 30}px)`)
+      console.log(`📍 Positioning ABOVE: insufficient space below (${spaceBelow}px) but good space above (${spaceAbove}px)`)
+    } else {
+      // Position below (default preference)
+      positionAbove = false
+      popupY = rect.bottom
+      console.log(`📍 Positioning BELOW: sufficient space below (${spaceBelow}px) or insufficient space above`)
     }
     
     // Ensure horizontal position doesn't go off-screen

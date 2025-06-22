@@ -9,12 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import sentry_sdk
 from openai import AsyncOpenAI
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from bs4 import BeautifulSoup
 
 from ..database import get_db_session
-from ..auth import get_current_user_profile
+from ..auth import get_current_user_profile, create_rate_limit_dependency
 from ..models import Profile, Document
 from ..schemas import (
     LengthRewriteRequest,
@@ -24,8 +22,9 @@ from ..schemas import (
     ParagraphRewrite
 )
 
-# Initialize the rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Create rate limit dependencies for different endpoints
+length_rewrite_rate_limit = create_rate_limit_dependency(300)  # 300 requests per hour for length rewriting
+retry_rewrite_rate_limit = create_rate_limit_dependency(300)  # 300 requests per hour for retries
 
 # Sentry SDK Compatibility Layer (reused from suggestions.py)
 def set_span_attribute(span, key: str, value):
@@ -332,16 +331,14 @@ def calculate_paragraph_target_length(
 
 
 @router.post("/length", response_model=LengthRewriteResponse)
-@limiter.limit("100/hour")
 async def rewrite_for_length(
-    request: Request,
     request_data: LengthRewriteRequest,
-    current_profile: Profile = Depends(get_current_user_profile),
+    current_profile: Profile = Depends(length_rewrite_rate_limit),  # Use our custom rate limiter
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Rewrite document paragraphs to meet target length requirements.
-    Rate limited to 100 requests per hour.
+    Rate limited to 300 requests per hour per user.
     """
     # Validate request parameters
     if request_data.unit.lower() not in ["words", "characters"]:
@@ -463,15 +460,13 @@ async def rewrite_for_length(
 
 
 @router.post("/retry", response_model=RetryRewriteResponse)
-@limiter.limit("200/hour")
 async def retry_rewrite(
-    request: Request,
     request_data: RetryRewriteRequest,
-    current_profile: Profile = Depends(get_current_user_profile)
+    current_profile: Profile = Depends(retry_rewrite_rate_limit)  # Use our custom rate limiter
 ):
     """
     Retry rewriting a paragraph with a different approach.
-    Rate limited to 200 requests per hour.
+    Rate limited to 300 requests per hour per user.
     """
     # Validate request parameters
     if request_data.unit.lower() not in ["words", "characters"]:

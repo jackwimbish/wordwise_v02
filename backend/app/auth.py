@@ -2,10 +2,11 @@
 
 import os
 from typing import Optional
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from uuid import UUID
 from jose import jwt, JWTError
 
@@ -125,3 +126,97 @@ async def get_current_user_profile(
 # Convenience dependency that just returns the user ID
 # Use this when you only need the user ID and not the full profile
 get_current_user = get_current_user_id 
+
+
+async def check_rate_limit(
+    requests_per_hour: int = 100,
+    current_profile: Profile = Depends(get_current_user_profile),
+    db: AsyncSession = Depends(get_db_session)
+) -> Profile:
+    """
+    Check and enforce per-user rate limits for LLM API calls.
+    
+    Args:
+        requests_per_hour: Maximum requests allowed per hour for this route
+        current_profile: The authenticated user's profile
+        db: Database session
+        
+    Returns:
+        Profile: The user's profile (for use in the protected route)
+        
+    Raises:
+        HTTPException: 429 if rate limit exceeded
+    """
+    current_time = datetime.now(timezone.utc)
+    
+    # Check if we need to reset the rate limit window
+    if (current_profile.rate_limit_reset_at is None or 
+        current_time >= current_profile.rate_limit_reset_at):
+        
+        # Reset the rate limit window
+        new_reset_time = current_time + timedelta(hours=1)
+        
+        # Update the profile with reset values
+        await db.execute(
+            update(Profile)
+            .where(Profile.id == current_profile.id)
+            .values(
+                api_call_count=1,
+                rate_limit_reset_at=new_reset_time
+            )
+        )
+        await db.commit()
+        
+        # Update the current profile object for return
+        current_profile.api_call_count = 1
+        current_profile.rate_limit_reset_at = new_reset_time
+        
+    else:
+        # Check if user has exceeded the rate limit
+        if current_profile.api_call_count >= requests_per_hour:
+            # Calculate seconds until reset
+            seconds_until_reset = int((current_profile.rate_limit_reset_at - current_time).total_seconds())
+            
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "Rate limit exceeded",
+                    "message": f"You have exceeded the rate limit of {requests_per_hour} requests per hour for this feature.",
+                    "current_usage": current_profile.api_call_count,
+                    "limit": requests_per_hour,
+                    "reset_in_seconds": seconds_until_reset
+                },
+                headers={"Retry-After": str(seconds_until_reset)}
+            )
+        
+        # Increment the API call count
+        await db.execute(
+            update(Profile)
+            .where(Profile.id == current_profile.id)
+            .values(api_call_count=current_profile.api_call_count + 1)
+        )
+        await db.commit()
+        
+        # Update the current profile object for return
+        current_profile.api_call_count += 1
+    
+    return current_profile
+
+
+def create_rate_limit_dependency(requests_per_hour: int):
+    """
+    Factory function to create rate limit dependencies with specific limits.
+    
+    Args:
+        requests_per_hour: Maximum requests allowed per hour
+        
+    Returns:
+        A FastAPI dependency function
+    """
+    async def rate_limit_dependency(
+        current_profile: Profile = Depends(get_current_user_profile),
+        db: AsyncSession = Depends(get_db_session)
+    ) -> Profile:
+        return await check_rate_limit(requests_per_hour, current_profile, db)
+    
+    return rate_limit_dependency 
