@@ -7,6 +7,7 @@ import { useTabVisibility } from '@/lib/hooks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { FileUpload } from '@/components/ui/file-upload'
 import { Navbar } from '@/components/navigation/Navbar'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -17,11 +18,13 @@ export default function DocumentsPage() {
     documents, 
     documentsLoading, 
     loadDocuments,
-    deleteDocument
+    deleteDocument,
+    importDocument
   } = useAppStore()
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [documentToDelete, setDocumentToDelete] = useState<{ id: string; title: string } | null>(null)
+  const [isImporting, setIsImporting] = useState(false)
   
   // Keep track of whether we've loaded documents for this user
   const hasLoadedForUser = useRef<string | null>(null)
@@ -79,6 +82,22 @@ export default function DocumentsPage() {
     }
   }
 
+  const handleFileImport = async (file: File) => {
+    if (!user) return
+    
+    setIsImporting(true)
+    try {
+      const document = await importDocument(file)
+      // Navigate to the newly created document
+      router.push(`/documents/${document.id}`)
+    } catch (error) {
+      console.error('Failed to import document:', error)
+      alert('Failed to import document. Please try again.')
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -103,7 +122,7 @@ export default function DocumentsPage() {
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-start">
               <div>
                 <h1 className="text-3xl font-bold text-gray-900">
                   My Documents
@@ -112,10 +131,25 @@ export default function DocumentsPage() {
                   Manage your writing projects with AI-powered assistance
                 </p>
               </div>
-              <Button onClick={handleCreateDocument} size="lg">
-                + New Document
-              </Button>
+              <div className="flex gap-3">
+                <Button onClick={handleCreateDocument} size="lg">
+                  + New Document
+                </Button>
+                <div className="min-w-[200px]">
+                  <FileUpload 
+                    onFileSelect={handleFileImport}
+                    disabled={isImporting}
+                  />
+                </div>
+              </div>
             </div>
+            
+            {isImporting && (
+              <div className="mt-4 flex items-center justify-center py-4">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-gray-600">Importing document...</span>
+              </div>
+            )}
           </div>
 
           {/* Loading State */}
@@ -141,9 +175,19 @@ export default function DocumentsPage() {
                 <p className="text-gray-600 mb-6">
                   Create your first document to start writing with AI assistance
                 </p>
-                <Button onClick={handleCreateDocument}>
-                  Create Your First Document
-                </Button>
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <Button onClick={handleCreateDocument}>
+                    Create Your First Document
+                  </Button>
+                  <span className="text-gray-400">or</span>
+                  <div className="min-w-[250px]">
+                    <FileUpload 
+                      onFileSelect={handleFileImport}
+                      disabled={isImporting}
+                      className="border-solid"
+                    />
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

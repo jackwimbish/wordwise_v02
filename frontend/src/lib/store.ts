@@ -32,6 +32,7 @@ interface AppState {
   loadDocuments: () => Promise<void>
   refreshDocuments: () => Promise<void>
   deleteDocument: (id: string) => Promise<void>
+  importDocument: (file: File) => Promise<Document>
   
   // Document editing actions
   setCurrentDocument: (document: Document | null) => void
@@ -137,6 +138,28 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (error) {
         console.error('Failed to delete document:', error)
         throw error // Re-throw so the UI can handle the error
+      }
+    },
+
+    importDocument: async (file: File) => {
+      try {
+        const document = await apiClient.importDocument(file)
+        
+        // Add the new document to the local state
+        const { documents } = get()
+        const newDocumentListItem = {
+          id: document.id,
+          title: document.title,
+          content_preview: document.content ? document.content.substring(0, 100) + (document.content.length > 100 ? '...' : '') : '',
+          created_at: document.created_at,
+          updated_at: document.updated_at
+        }
+        set({ documents: [newDocumentListItem, ...documents] })
+        
+        return document
+      } catch (error) {
+        console.error('Failed to import document:', error)
+        throw error
       }
     },
     

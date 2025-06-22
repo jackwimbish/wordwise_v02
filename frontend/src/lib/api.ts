@@ -120,6 +120,33 @@ class ApiClient {
     })
   }
 
+  // Document Import
+  async importDocument(file: File): Promise<Document> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const token = await this.getAuthToken()
+    const headers: Record<string, string> = {}
+    
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${this.baseURL}/api/v1/import/file`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: AbortSignal.timeout(60000), // 60 second timeout for file uploads
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+
+    return await response.json()
+  }
+
   // Suggestions
   async analyzeParagraphs(data: ParagraphAnalysisRequest, signal?: AbortSignal): Promise<SuggestionAnalysisResponse> {
     return this.request<SuggestionAnalysisResponse>('/api/v1/suggestions/analyze', {
