@@ -117,3 +117,106 @@ class ClearDismissedResponse(BaseModel):
     success: bool = Field(..., description="Whether clearing was successful")
     cleared_count: int = Field(..., description="Number of dismissed suggestions cleared")
     message: str = Field(..., description="Success message")
+
+
+# === Length Rewriter Schemas ===
+
+class LengthRewriteRequest(BaseModel):
+    """Schema for requesting document length rewriting."""
+    document_id: UUID = Field(..., description="ID of the document to rewrite")
+    full_text: str = Field(..., description="The entire document content")
+    target_length: int = Field(..., gt=0, description="Target length (must be positive)")
+    unit: str = Field(..., description="Unit of measurement: 'words' or 'characters'")
+    mode: str = Field(..., description="Rewrite mode: 'shorten' or 'lengthen'")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{
+                "document_id": "550e8400-e29b-41d4-a716-446655440000",
+                "full_text": "This is a sample document with multiple paragraphs. Each paragraph will be analyzed for potential rewriting.",
+                "target_length": 500,
+                "unit": "words",
+                "mode": "shorten"
+            }]
+        }
+    }
+
+
+class ParagraphRewrite(BaseModel):
+    """Schema for a single paragraph rewrite suggestion."""
+    paragraph_id: int = Field(..., description="Index of the paragraph in the document")
+    original_text: str = Field(..., description="Original paragraph text")
+    rewritten_text: str = Field(..., description="AI-rewritten paragraph text")
+    original_length: int = Field(..., description="Length of original text")
+    rewritten_length: int = Field(..., description="Length of rewritten text")
+
+
+class LengthRewriteResponse(BaseModel):
+    """Schema for length rewrite response."""
+    document_id: UUID = Field(..., description="ID of the document")
+    original_length: int = Field(..., description="Original document length")
+    target_length: int = Field(..., description="Target length requested")
+    unit: str = Field(..., description="Unit of measurement used")
+    mode: str = Field(..., description="Rewrite mode used")
+    paragraph_rewrites: List[ParagraphRewrite] = Field(..., description="List of paragraph rewrites")
+    total_paragraphs: int = Field(..., description="Total number of paragraphs processed")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{
+                "document_id": "550e8400-e29b-41d4-a716-446655440000",
+                "original_length": 850,
+                "target_length": 500,
+                "unit": "words",
+                "mode": "shorten",
+                "paragraph_rewrites": [
+                    {
+                        "paragraph_id": 0,
+                        "original_text": "This is the first paragraph with many words...",
+                        "rewritten_text": "This is the concise first paragraph...",
+                        "original_length": 45,
+                        "rewritten_length": 32
+                    }
+                ],
+                "total_paragraphs": 3
+            }]
+        }
+    }
+
+
+class RetryRewriteRequest(BaseModel):
+    """Schema for retrying a paragraph rewrite."""
+    original_paragraph: str = Field(..., description="The original paragraph text")
+    previous_suggestion: str = Field(..., description="The previous rewrite suggestion to avoid")
+    target_length: int = Field(..., gt=0, description="Target length for the paragraph")
+    unit: str = Field(..., description="Unit of measurement: 'words' or 'characters'")
+    mode: str = Field(..., description="Rewrite mode: 'shorten' or 'lengthen'")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{
+                "original_paragraph": "This is a paragraph that needs to be rewritten with different approach.",
+                "previous_suggestion": "This paragraph needs rewriting differently.",
+                "target_length": 60,
+                "unit": "words",
+                "mode": "shorten"
+            }]
+        }
+    }
+
+
+class RetryRewriteResponse(BaseModel):
+    """Schema for retry rewrite response."""
+    rewritten_text: str = Field(..., description="New rewritten version of the paragraph")
+    original_length: int = Field(..., description="Length of original text")
+    rewritten_length: int = Field(..., description="Length of new rewritten text")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{
+                "rewritten_text": "This paragraph has been rewritten with a fresh approach.",
+                "original_length": 85,
+                "rewritten_length": 58
+            }]
+        }
+    }
