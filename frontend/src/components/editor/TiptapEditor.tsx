@@ -672,6 +672,13 @@ export function TiptapEditor({
   // Handle suggestion dismiss (Phase 4)
   const handleDismissSuggestion = useCallback(async (suggestion: SuggestionResponse) => {
     console.log('❌ Dismiss suggestion:', suggestion.original_text)
+    console.log('❌ Suggestion details:', {
+      suggestion_id: suggestion.suggestion_id,
+      global_start: suggestion.global_start,
+      global_end: suggestion.global_end,
+      rule_id: suggestion.rule_id,
+      original_text: suggestion.original_text
+    })
     
     // Guard clause - ensure we have required dependencies
     if (!documentId || !apiClient) {
@@ -682,7 +689,81 @@ export function TiptapEditor({
 
     try {
       // Step 1: Optimistic UI update - remove suggestion immediately for instant feedback
-      setSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestion.suggestion_id))
+      // Use multiple criteria to find the exact suggestion that was clicked
+      setSuggestions(prev => {
+        const before = prev.length
+        console.log('🔍 Looking for suggestion to remove:', {
+          suggestion_id: suggestion.suggestion_id,
+          original_text: suggestion.original_text,
+          global_start: suggestion.global_start,
+          global_end: suggestion.global_end,
+          rule_id: suggestion.rule_id
+        })
+        
+        // Log all current suggestions with their positions
+        console.log('🔍 Current suggestions before filtering:')
+        prev.forEach((s, index) => {
+          if (s.original_text === suggestion.original_text) {
+            console.log(`  ${index}: "${s.original_text}" at ${s.global_start}-${s.global_end} (id: ${s.suggestion_id})`)
+          }
+        })
+        
+        const filtered = prev.filter(s => {
+          // Primary match: exact criteria
+          const exactMatch = (
+            s.suggestion_id === suggestion.suggestion_id &&
+            s.global_start === suggestion.global_start &&
+            s.global_end === suggestion.global_end &&
+            s.original_text === suggestion.original_text &&
+            s.rule_id === suggestion.rule_id
+          )
+          
+          // Secondary match: same text and rule, but allow for small position differences (±2 positions)
+          // This handles cases where position mapping has caused slight shifts
+          const positionTolerance = 2
+          const fuzzyMatch = (
+            s.original_text === suggestion.original_text &&
+            s.rule_id === suggestion.rule_id &&
+            Math.abs(s.global_start - suggestion.global_start) <= positionTolerance &&
+            Math.abs(s.global_end - suggestion.global_end) <= positionTolerance
+          )
+          
+          const isMatch = exactMatch || fuzzyMatch
+          
+          if (isMatch) {
+            console.log('🎯 Found matching suggestion to remove:', {
+              type: exactMatch ? 'exact' : 'fuzzy',
+              text: s.original_text,
+              position: `${s.global_start}-${s.global_end}`,
+              id: s.suggestion_id
+            })
+          }
+          
+          return !isMatch
+        })
+        
+        console.log('🔄 Suggestions filtered:', before, '->', filtered.length, '(removed:', before - filtered.length, ')')
+        
+        // Verify the suggestion was actually removed
+        const stillExists = filtered.some(s => 
+          s.original_text === suggestion.original_text && 
+          s.rule_id === suggestion.rule_id &&
+          Math.abs(s.global_start - suggestion.global_start) <= 2
+        )
+        
+        if (stillExists) {
+          console.warn('⚠️ Suggestion still exists after filtering! Remaining matches:')
+          filtered.forEach((s, index) => {
+            if (s.original_text === suggestion.original_text) {
+              console.warn(`  ${index}: "${s.original_text}" at ${s.global_start}-${s.global_end} (id: ${s.suggestion_id})`)
+            }
+          })
+        } else {
+          console.log('✅ Suggestion successfully removed from state')
+        }
+        
+        return filtered
+      })
       
       // Step 2: Close popup immediately
       handlePopupClose()
@@ -966,8 +1047,6 @@ export function TiptapEditor({
       }
     },
   })
-
-
 
   // Helper function to check if a suggestion is still valid after an edit (from Milestone 2)
   const isValidSuggestion = (

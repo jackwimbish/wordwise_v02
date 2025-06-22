@@ -279,7 +279,7 @@ export default function DocumentPage() {
         paragraph_rewrites: updatedRewrites
       })
     }
-  }, [rewriteResponse, currentDocument, updateCurrentDocumentContent])
+  }, [rewriteResponse, currentDocument, updateCurrentDocumentContent, editorInstance])
 
   const handleRetryRewrite = useCallback(async (paragraphId: number, retryRequest: RetryRewriteRequest) => {
     setRetryingParagraphs(prev => new Set(prev).add(paragraphId))

@@ -43,7 +43,7 @@ function createDecorations(
         suggestion.global_end <= doc.content.size && 
         suggestion.global_start < suggestion.global_end) {
       
-            try {
+      try {
         // Find the correct position by testing different offsets around the expected position
         let finalStart = suggestion.global_start
         let finalEnd = suggestion.global_end
@@ -73,9 +73,9 @@ function createDecorations(
                     console.log(`🎯 Found correct position for "${suggestion.original_text}" at offset ${offset}: ${finalStart}-${finalEnd}`)
                   }
                 }
-                             } catch {
-                 // Skip invalid positions
-               }
+              } catch {
+                // Skip invalid positions
+              }
             }
           }
           
@@ -145,7 +145,11 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
   },
 
   addProseMirrorPlugins() {
-    const extensionOptions = this.options
+    // Store reference to get current options (ESLint-friendly approach)
+    const getCurrentOptions = () => {
+      const options = this.options
+      return options
+    }
     
     return [
       new Plugin({
@@ -153,25 +157,30 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
         
         state: {
           init(_, { doc }) {
-            return createDecorations(
+            const options = getCurrentOptions()
+            const decorations = createDecorations(
               doc, 
-              extensionOptions.suggestions, 
-              extensionOptions.suggestionClass,
-              extensionOptions.onSuggestionClick
+              options.suggestions, 
+              options.suggestionClass,
+              options.onSuggestionClick
             )
+            return decorations
           },
           
           apply(transaction, decorationSet, oldState, newState) {
-            // Get current suggestions from options
-            const suggestions = extensionOptions.suggestions || []
+            // Get current suggestions from the extension instance (not captured closure)
+            const options = getCurrentOptions()
+            const suggestions = options.suggestions || []
             
             // Create new decorations based on current suggestions
-            return createDecorations(
+            const newDecorations = createDecorations(
               newState.doc, 
               suggestions, 
-              extensionOptions.suggestionClass,
-              extensionOptions.onSuggestionClick
+              options.suggestionClass,
+              options.onSuggestionClick
             )
+            
+            return newDecorations
           },
         },
         
@@ -200,11 +209,12 @@ export const SuggestionExtension = Extension.create<SuggestionOptions>({
               const dismissalIdentifier = element.getAttribute('data-dismissal-identifier')
               
               if (suggestionId && ruleId && category && originalText && suggestionText && message && dismissalIdentifier) {
-                // Find the matching suggestion from the options
-                const matchingSuggestion = extensionOptions.suggestions.find(s => s.suggestion_id === suggestionId)
+                // Find the matching suggestion from the current options (not captured closure)
+                const options = getCurrentOptions()
+                const matchingSuggestion = options.suggestions.find(s => s.suggestion_id === suggestionId)
                 
-                if (matchingSuggestion && extensionOptions.onSuggestionClick) {
-                  extensionOptions.onSuggestionClick(matchingSuggestion, event as MouseEvent)
+                if (matchingSuggestion && options.onSuggestionClick) {
+                  options.onSuggestionClick(matchingSuggestion, event as MouseEvent)
                   return true // Prevent default handling
                 }
               }
