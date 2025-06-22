@@ -93,6 +93,12 @@ export interface DismissSuggestionResponse {
   dismissal_identifier: string
 }
 
+export interface ClearDismissedSuggestionsResponse {
+  success: boolean
+  cleared_count: number
+  message: string
+}
+
 // Auth Types
 export interface AuthUser {
   id: string

@@ -110,3 +110,10 @@ class DismissSuggestionResponse(BaseModel):
     """Schema for dismiss suggestion response."""
     success: bool = Field(..., description="Whether dismissal was successful")
     dismissal_identifier: str = Field(..., description="The dismissal identifier created")
+
+
+class ClearDismissedResponse(BaseModel):
+    """Schema for clear dismissed suggestions response."""
+    success: bool = Field(..., description="Whether clearing was successful")
+    cleared_count: int = Field(..., description="Number of dismissed suggestions cleared")
+    message: str = Field(..., description="Success message")

@@ -5,7 +5,7 @@ import json
 from typing import List, Dict, Set, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, delete
 import sentry_sdk
 from openai import AsyncOpenAI
 
@@ -17,6 +17,7 @@ from ..schemas import (
     SuggestionAnalysisResponse,
     DismissSuggestionRequest,
     DismissSuggestionResponse,
+    ClearDismissedResponse,
     Suggestion
 )
 
@@ -392,4 +393,70 @@ async def dismiss_suggestion(
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to dismiss suggestion"
-                ) 
+                )
+
+
+@router.delete("/dismissed/{document_id}", response_model=ClearDismissedResponse)
+async def clear_dismissed_suggestions(
+    document_id: uuid.UUID,
+    current_profile: Profile = Depends(get_current_user_profile),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Clear all dismissed suggestions for a document, allowing them to appear again.
+    """
+    # Verify document ownership
+    document_result = await db.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.profile_id == current_profile.id
+        )
+    )
+    document = document_result.scalar_one_or_none()
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found or access denied"
+        )
+    
+    with sentry_sdk.start_span(
+        op="suggestions.clear_dismissed",
+        description="Clear dismissed suggestions"
+    ) as span:
+        set_span_attribute(span, "document_id", str(document_id))
+        
+        try:
+            # Count dismissed suggestions before deletion
+            count_result = await db.execute(
+                select(func.count(DismissedSuggestion.id)).where(
+                    DismissedSuggestion.profile_id == current_profile.id,
+                    DismissedSuggestion.document_id == document_id
+                )
+            )
+            cleared_count = count_result.scalar() or 0
+            
+            # Delete all dismissed suggestions for this document
+            await db.execute(
+                delete(DismissedSuggestion).where(
+                    DismissedSuggestion.profile_id == current_profile.id,
+                    DismissedSuggestion.document_id == document_id
+                )
+            )
+            
+            await db.commit()
+            
+            set_span_attribute(span, "cleared_count", cleared_count)
+            
+            return ClearDismissedResponse(
+                success=True,
+                cleared_count=cleared_count,
+                message=f"Successfully cleared {cleared_count} dismissed suggestions"
+            )
+            
+        except Exception as e:
+            await db.rollback()
+            sentry_sdk.capture_exception(e)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to clear dismissed suggestions"
+            ) 

@@ -7,6 +7,16 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { Extension } from '@tiptap/core'
 import { Transaction } from '@tiptap/pm/state'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { SuggestionExtension } from '@/lib/editor/SuggestionExtension'
 import { SuggestionPopup } from '@/components/editor/SuggestionPopup'
 import { useAppStore } from '@/lib/store'
@@ -79,6 +89,14 @@ export function TiptapEditor({
   // API call state
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisErrors, setAnalysisErrors] = useState<string[]>([])
+  
+  // Reset dialog state
+  const [showResetDialog, setShowResetDialog] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
+  
+  // Post-analysis follow-up state
+  const needsFollowUpAnalysis = useRef(false)
+  
   // Stale state management
   const pendingTransactions = useRef<StoredTransaction[]>([])
   const analysisInProgress = useRef(false)
@@ -428,8 +446,38 @@ export function TiptapEditor({
       pendingTransactions.current = []
       apiCallDocState.current = null
       currentAbortController.current = null
+      
+      // Check if we need follow-up analysis for changes that occurred during this analysis
+      if (needsFollowUpAnalysis.current) {
+        console.log('🔄 Follow-up analysis needed - triggering analysis for changes made during previous analysis')
+        needsFollowUpAnalysis.current = false
+        
+        // Use a small delay to avoid immediate re-triggering and let the UI update
+        // Directly trigger debounced analysis without going through triggerAnalysis
+        if (debounceTimeoutRef.current) {
+          clearTimeout(debounceTimeoutRef.current)
+        }
+        
+        debounceTimeoutRef.current = setTimeout(() => {
+          // Force re-extraction and marking of paragraphs as dirty for follow-up analysis
+          if (editorRef.current) {
+            const currentParagraphs = extractParagraphs(editorRef.current)
+            const forceDirtyParagraphs = new Map<string, ParagraphState>()
+            
+            currentParagraphs.forEach(paragraph => {
+              forceDirtyParagraphs.set(paragraph.id, {
+                ...paragraph,
+                isDirty: true // Force all paragraphs to be dirty for follow-up
+              })
+            })
+            
+            setParagraphs(forceDirtyParagraphs)
+          }
+        }, 100) // Shorter delay for follow-up analysis
+      }
     }
-  }, [documentId, apiClient, paragraphs])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+              }, [documentId, apiClient, extractParagraphs])
 
   // Wrapper function that gets dirty paragraphs from state and calls performAnalysis
   const analyzeDirtyParagraphs = useCallback(async () => {
@@ -450,7 +498,7 @@ export function TiptapEditor({
     // Call the core analysis function
     await performAnalysis(dirtyParagraphs)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [performAnalysis, paragraphs])
+  }, [performAnalysis])
 
   // Debounced analysis trigger
   const triggerAnalysis = useCallback(() => {
@@ -460,7 +508,7 @@ export function TiptapEditor({
     
     debounceTimeoutRef.current = setTimeout(() => {
       analyzeDirtyParagraphs()
-    }, 500) // 500ms debounce as specified in Milestone 3
+    }, 1000) // 1000ms debounce for better user experience
   }, [analyzeDirtyParagraphs])
 
   // Handle suggestion click events (Phase 1)
@@ -652,6 +700,83 @@ export function TiptapEditor({
     }
   }, [documentId, apiClient, handlePopupClose])
 
+  // Handle reset dismissed suggestions (Clear dismissed feature)
+  const handleResetDismissedSuggestions = useCallback(async () => {
+    if (!documentId || !apiClient) {
+      console.error('Missing documentId or apiClient for reset operation')
+      return
+    }
+
+    // Access editor through ref
+    const currentEditor = editorRef.current
+    if (!currentEditor) {
+      console.error('Editor not available for reset operation')
+      return
+    }
+
+    setIsResetting(true)
+    
+    try {
+      console.log('🔄 Clearing dismissed suggestions for document:', documentId)
+      
+      // Call API to clear dismissed suggestions
+      const response = await apiClient.clearDismissedSuggestions(documentId)
+      
+      console.log('✅ Dismissed suggestions cleared:', response.message)
+      
+      // Force full document re-analysis to show previously dismissed suggestions
+      console.log('🔄 Triggering full document re-analysis...')
+      
+      // Mark all paragraphs as dirty to force re-analysis
+      const currentParagraphs = extractParagraphs(currentEditor)
+      const allDirtyParagraphs = new Map<string, ParagraphState>()
+      
+      currentParagraphs.forEach(paragraph => {
+        allDirtyParagraphs.set(paragraph.id, {
+          ...paragraph,
+          isDirty: true
+        })
+      })
+      
+      setParagraphs(allDirtyParagraphs)
+      
+      // Clear current suggestions and trigger fresh analysis
+      setSuggestions([])
+      
+      // Trigger analysis with all paragraphs
+      if (currentParagraphs.length > 0) {
+        await performAnalysis(currentParagraphs)
+      }
+      
+      console.log('✅ Reset dismissed suggestions completed successfully')
+      
+    } catch (error) {
+      console.error('❌ Failed to reset dismissed suggestions:', error)
+      
+      // Handle different error types for better UX
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log('📡 Reset request was cancelled')
+      } else if (error instanceof Error) {
+        if (error.message.includes('404')) {
+          console.error('📄 Document not found for reset operation')
+        } else if (error.message.includes('500')) {
+          console.error('🔥 Server error during reset operation')
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          console.error('🌐 Network error during reset operation')
+        } else {
+          console.error('❓ API error during reset operation:', error.message)
+        }
+      } else {
+        console.error('❓ Unknown error during reset operation')
+      }
+      
+      // TODO: Optional error toast notification for user feedback
+    } finally {
+      setIsResetting(false)
+      setShowResetDialog(false)
+    }
+  }, [documentId, apiClient, extractParagraphs, performAnalysis])
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -719,6 +844,7 @@ export function TiptapEditor({
           pendingTransactions.current = []
           apiCallDocState.current = null
           currentAbortController.current = null
+          needsFollowUpAnalysis.current = false // Reset follow-up flag since we're restarting
           
           // Trigger new analysis after a short delay to avoid rapid restarts
           setTimeout(() => {
@@ -733,6 +859,10 @@ export function TiptapEditor({
           transaction,
           mapping: transaction.mapping
         })
+        
+        // Flag that we need follow-up analysis for the new changes
+        needsFollowUpAnalysis.current = true
+        console.log('🏃‍♂️ Minor change during analysis - flagging for follow-up analysis')
       }
 
       // Extract paragraphs and update tracking state
@@ -1191,6 +1321,20 @@ export function TiptapEditor({
               ⚠️ {analysisErrors.length} errors
             </span>
           )}
+          
+          {/* Reset Dismissed Suggestions Button */}
+          {documentId && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowResetDialog(true)}
+              disabled={isResetting || isAnalyzing}
+              className="ml-2"
+            >
+              {isResetting ? '🔄 Resetting...' : 'Reset Suggestion Dismissals'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1316,6 +1460,30 @@ export function TiptapEditor({
         onDismiss={handleDismissSuggestion}
         onClose={handlePopupClose}
       />
+      
+      {/* Reset Dismissed Suggestions Confirmation Dialog */}
+      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset Suggestion Dismissals</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will clear all dismissed suggestions for this document, allowing them to appear again. 
+              The document will be re-analyzed to show previously dismissed suggestions.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResetting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleResetDismissedSuggestions}
+              disabled={isResetting}
+            >
+              {isResetting ? 'Resetting...' : 'Reset Dismissals'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 } 

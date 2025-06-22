@@ -8,7 +8,8 @@ import type {
   ParagraphAnalysisRequest,
   SuggestionAnalysisResponse,
   DismissSuggestionRequest,
-  DismissSuggestionResponse
+  DismissSuggestionResponse,
+  ClearDismissedSuggestionsResponse
 } from '@/types'
 
 class ApiClient {
@@ -128,6 +129,12 @@ class ApiClient {
     return this.request<DismissSuggestionResponse>('/api/v1/suggestions/dismiss', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  }
+
+  async clearDismissedSuggestions(documentId: string): Promise<ClearDismissedSuggestionsResponse> {
+    return this.request<ClearDismissedSuggestionsResponse>(`/api/v1/suggestions/dismissed/${documentId}`, {
+      method: 'DELETE',
     })
   }
 }
