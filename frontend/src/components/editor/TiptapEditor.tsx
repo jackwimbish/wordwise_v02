@@ -453,52 +453,78 @@ export function TiptapEditor({
         needsFollowUpAnalysis.current = false
         
         // Use a small delay to avoid immediate re-triggering and let the UI update
-        // Directly trigger debounced analysis without going through triggerAnalysis
+        // Trigger fresh analysis for follow-up - extraction will happen inside debounced function
         if (debounceTimeoutRef.current) {
           clearTimeout(debounceTimeoutRef.current)
         }
         
         debounceTimeoutRef.current = setTimeout(() => {
-          // Force re-extraction and marking of paragraphs as dirty for follow-up analysis
-          if (editorRef.current) {
-            const currentParagraphs = extractParagraphs(editorRef.current)
-            const forceDirtyParagraphs = new Map<string, ParagraphState>()
-            
-            currentParagraphs.forEach(paragraph => {
-              forceDirtyParagraphs.set(paragraph.id, {
-                ...paragraph,
-                isDirty: true // Force all paragraphs to be dirty for follow-up
-              })
-            })
-            
-            setParagraphs(forceDirtyParagraphs)
+          console.log('🔄 Follow-up analysis triggered - will use fresh paragraph extraction')
+          // Use triggerAnalysis instead of calling analyzeDirtyParagraphs directly to avoid circular dependency
+          if (debounceTimeoutRef.current) {
+            clearTimeout(debounceTimeoutRef.current)
           }
+          debounceTimeoutRef.current = setTimeout(() => {
+            if (editorRef.current) {
+              // Extract fresh paragraphs
+              const freshParagraphs = extractParagraphs(editorRef.current)
+              const updatedParagraphs = updateParagraphStates(freshParagraphs)
+              const dirtyParagraphs = Array.from(updatedParagraphs.values()).filter(p => p.isDirty && p.content.trim().length > 0)
+              if (dirtyParagraphs.length > 0) {
+                performAnalysis(dirtyParagraphs)
+              }
+            }
+          }, 50)
         }, 100) // Shorter delay for follow-up analysis
       }
     }
-              }, [documentId, apiClient, extractParagraphs, paragraphs])
+              }, [documentId, apiClient, extractParagraphs, updateParagraphStates])
 
-  // Wrapper function that gets dirty paragraphs from state and calls performAnalysis
+  // Fixed function that extracts FRESH paragraphs when debounce executes (not when timer is set)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const analyzeDirtyParagraphs = useCallback(async () => {
     console.log('📊 analyzeDirtyParagraphs called:', {
       documentId: !!documentId,
       apiClient: !!apiClient,
       analysisInProgress: analysisInProgress.current,
-      paragraphsCount: paragraphs.size
+      editorAvailable: !!editorRef.current
     })
     
-    // Get dirty paragraphs from current state
-    const dirtyParagraphs = Array.from(paragraphs.values()).filter(p => p.isDirty && p.content.trim().length > 0)
+    // CRITICAL FIX: Extract paragraphs INSIDE the debounced function to get fresh state
+    if (!editorRef.current) {
+      console.warn('⚠️ Editor not available for fresh paragraph extraction')
+      return
+    }
     
+    // Get FRESH paragraphs from current editor state (not stale state from when timer was set)
+    console.log('🔄 Extracting FRESH paragraphs from current editor state...')
+    const freshParagraphs = extractParagraphs(editorRef.current)
+    
+    // Update paragraph state with fresh data
+    const updatedParagraphs = updateParagraphStates(freshParagraphs)
+    
+    // Get dirty paragraphs from the freshly extracted data
+    const dirtyParagraphs = Array.from(updatedParagraphs.values()).filter(p => p.isDirty && p.content.trim().length > 0)
+    
+    console.log('📊 Fresh paragraphs extracted:', freshParagraphs.length)
     console.log('📊 Dirty paragraphs found:', dirtyParagraphs.length)
     
-    if (dirtyParagraphs.length === 0) return
+    if (dirtyParagraphs.length === 0) {
+      console.log('✅ No dirty paragraphs found in fresh extraction')
+      return
+    }
     
-    // Call the core analysis function
+    // Log the content of dirty paragraphs to verify we got the latest text
+    dirtyParagraphs.forEach((p, index) => {
+      console.log(`📝 Dirty paragraph ${index + 1}: "${p.content.slice(0, 50)}..."`)
+    })
+    
+    // Call the core analysis function with fresh paragraphs
     await performAnalysis(dirtyParagraphs)
-  }, [performAnalysis, paragraphs, documentId, apiClient])
+  }, [performAnalysis, extractParagraphs, updateParagraphStates, documentId, apiClient])
 
   // Debounced analysis trigger
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const triggerAnalysis = useCallback(() => {
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current)
@@ -863,15 +889,10 @@ export function TiptapEditor({
         console.log('🏃‍♂️ Minor change during analysis - flagging for follow-up analysis')
       }
 
-      // Extract paragraphs and update tracking state
-      const newParagraphs = extractParagraphs(editor)
-      const updatedParagraphs = updateParagraphStates(newParagraphs)
-      
-      // Check if any paragraphs are dirty and trigger analysis
-      const hasDirtyParagraphs = Array.from(updatedParagraphs.values()).some(p => p.isDirty)
-      if (hasDirtyParagraphs) {
-        triggerAnalysis()
-      }
+      // CRITICAL FIX: Don't extract paragraphs here (stale state issue)
+      // Just trigger analysis - paragraph extraction will happen INSIDE the debounced function
+      console.log('📝 Text changed - triggering debounced analysis for fresh state extraction')
+      triggerAnalysis()
 
       // Apply real-time position mapping to existing suggestions (from Milestone 2)
       const updatedSuggestions: SuggestionResponse[] = []
@@ -1117,48 +1138,17 @@ export function TiptapEditor({
           return
         }
         
-        // Extract paragraphs from current editor content and mark as dirty for initial analysis
-        const initialParagraphs = extractParagraphs(editor)
+        // Trigger initial analysis using fresh paragraph extraction
+        console.log('🚀 Triggering initial analysis with fresh extraction approach')
         
-        if (initialParagraphs.length === 0) {
-          console.log('⏭️ Skipping initial analysis - no paragraphs')
-          hasInitialAnalysisRun.current = false // Reset flag so it can run later
-          return
-        }
-        
-        // Create dirty paragraphs map for initial analysis (all paragraphs marked as dirty)
-        const dirtyParagraphs = new Map<string, ParagraphState>()
-        initialParagraphs.forEach((paragraph) => {
-          dirtyParagraphs.set(paragraph.id, {
-            ...paragraph,
-            isDirty: true // Mark as dirty for initial analysis
-          })
-        })
-        
-        console.log(`📍 Initial analysis: Created ${dirtyParagraphs.size} dirty paragraphs`)
-        
-        // Update paragraph state directly (don't use updateParagraphStates to avoid isDirty reset)
-        setParagraphs(dirtyParagraphs)
-        
-        // Trigger analysis after state update with the dirty paragraphs we just created
         if (debounceTimeoutRef.current) {
           clearTimeout(debounceTimeoutRef.current)
         }
         
+        // Use the same fresh extraction approach for initial analysis
         debounceTimeoutRef.current = setTimeout(() => {
-          // Call analyzeDirtyParagraphs with the paragraphs we just created
-          // instead of relying on the stale state from the closure
-          const paragraphsToAnalyze = Array.from(dirtyParagraphs.values()).filter(p => p.isDirty && p.content.trim().length > 0)
-          
-          if (paragraphsToAnalyze.length === 0) {
-            console.log('⚠️ No dirty paragraphs to analyze after state update')
-            return
-          }
-          
-          console.log(`🚀 Initial analysis proceeding with ${paragraphsToAnalyze.length} paragraphs`)
-          
-          // Call the analysis function directly with our paragraphs
-          performAnalysis(paragraphsToAnalyze)
+          console.log('🔄 Initial analysis: calling analyzeDirtyParagraphs with fresh extraction')
+          analyzeDirtyParagraphs()
         }, 500)
       }, 1000) // Increased delay to 1 second to ensure editor is stable
       
