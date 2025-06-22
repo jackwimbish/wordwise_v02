@@ -149,6 +149,29 @@ export interface RetryRewriteResponse {
   rewritten_length: number
 }
 
+// Version History Types
+export interface DocumentVersion {
+  id: string
+  document_id: string
+  content: string
+  saved_at: string
+}
+
+export interface DocumentVersionListResponse {
+  versions: DocumentVersion[]
+  total: number
+}
+
+export interface RestoreVersionRequest {
+  version_id: string
+}
+
+export interface RestoreVersionResponse {
+  success: boolean
+  message: string
+  document: Document
+}
+
 // API Client Types
 export interface ApiClientConfig {
   baseURL: string

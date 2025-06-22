@@ -37,7 +37,7 @@ class Profile(Base):
     )
     
     # Rate limiting columns
-    api_call_count = Column(Integer, default=0, nullable=False)
+    api_call_count = Column(Integer, default=0, server_default="0", nullable=False)
     rate_limit_reset_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # A profile can have many documents. The 'documents' attribute on a Profile

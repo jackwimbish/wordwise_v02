@@ -512,6 +512,8 @@ export default function DocumentPage() {
               onEditorReady={setEditorInstance}
               placeholder="Start writing your document..."
               documentId={currentDocument.id}
+              document={currentDocument}
+              onDocumentUpdated={setCurrentDocument}
             />
           </Card>
         </div>

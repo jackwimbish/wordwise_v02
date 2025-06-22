@@ -13,7 +13,10 @@ import type {
   LengthRewriteRequest,
   LengthRewriteResponse,
   RetryRewriteRequest,
-  RetryRewriteResponse
+  RetryRewriteResponse,
+  DocumentVersion,
+  DocumentVersionListResponse,
+  RestoreVersionResponse
 } from '@/types'
 
 class ApiClient {
@@ -218,6 +221,21 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
       signal,
+    })
+  }
+
+  // Version History
+  async getDocumentVersions(documentId: string): Promise<DocumentVersionListResponse> {
+    return this.request<DocumentVersionListResponse>(`/api/v1/documents/${documentId}/versions`)
+  }
+
+  async getDocumentVersion(documentId: string, versionId: string): Promise<DocumentVersion> {
+    return this.request<DocumentVersion>(`/api/v1/documents/${documentId}/versions/${versionId}`)
+  }
+
+  async restoreDocumentVersion(documentId: string, versionId: string): Promise<RestoreVersionResponse> {
+    return this.request<RestoreVersionResponse>(`/api/v1/documents/${documentId}/versions/${versionId}/restore`, {
+      method: 'POST',
     })
   }
 }

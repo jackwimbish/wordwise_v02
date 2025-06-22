@@ -54,7 +54,7 @@ openai_client = AsyncOpenAI(
 )
 
 # Configuration constants
-MAX_PARAGRAPHS_PER_REQUEST = 10
+MAX_PARAGRAPHS_PER_REQUEST = 40
 MAX_PARAGRAPH_LENGTH = 2000
 OPENAI_MODEL = "gpt-4.1-nano-2025-04-14"
 

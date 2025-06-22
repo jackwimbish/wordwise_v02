@@ -19,9 +19,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { SuggestionExtension } from '@/lib/editor/SuggestionExtension'
 import { SuggestionPopup } from '@/components/editor/SuggestionPopup'
+import { VersionHistory } from '@/components/editor/VersionHistory'
 
 import { useAppStore } from '@/lib/store'
-import type { SuggestionResponse, ParagraphToAnalyze, ParagraphAnalysisRequest } from '@/types'
+import type { SuggestionResponse, ParagraphToAnalyze, ParagraphAnalysisRequest, Document } from '@/types'
 
 interface TiptapEditorProps {
   content: string
@@ -29,6 +30,8 @@ interface TiptapEditorProps {
   placeholder?: string
   editable?: boolean
   documentId?: string
+  document?: Document
+  onDocumentUpdated?: (document: Document) => void
   onReadabilityTextChange?: (text: string) => void
   onEditorReady?: (editor: Editor) => void
 }
@@ -77,6 +80,8 @@ export function TiptapEditor({
   placeholder = 'Start writing...', 
   editable = true,
   documentId,
+  document,
+  onDocumentUpdated,
   onReadabilityTextChange,
   onEditorReady
 }: TiptapEditorProps) {
@@ -1440,6 +1445,14 @@ export function TiptapEditor({
             </Button>
           )}
 
+          {/* Version History Button */}
+          {documentId && document && onDocumentUpdated && (
+            <VersionHistory
+              documentId={documentId}
+              currentDocument={document}
+              onDocumentUpdated={onDocumentUpdated}
+            />
+          )}
 
         </div>
       </div>

@@ -172,22 +172,9 @@ export default function DocumentsPage() {
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">
                   No documents yet
                 </h3>
-                <p className="text-gray-600 mb-6">
-                  Create your first document to start writing with AI assistance
+                <p className="text-gray-600">
+                  Use the controls above to create your first document
                 </p>
-                <div className="flex flex-col sm:flex-row gap-4 items-center">
-                  <Button onClick={handleCreateDocument}>
-                    Create Your First Document
-                  </Button>
-                  <span className="text-gray-400">or</span>
-                  <div className="min-w-[250px]">
-                    <FileUpload 
-                      onFileSelect={handleFileImport}
-                      disabled={isImporting}
-                      className="border-solid"
-                    />
-                  </div>
-                </div>
               </CardContent>
             </Card>
           )}
