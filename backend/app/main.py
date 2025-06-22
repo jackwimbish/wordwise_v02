@@ -5,11 +5,18 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import sentry_sdk
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # --- Environment Variable Loading ---
 # It's good practice to load environment variables at the very start.
 # This will load the variables from your /backend/.env file.
 load_dotenv()
+
+# --- Rate Limiter Configuration ---
+# Initialize the rate limiter with remote address as the key function
+limiter = Limiter(key_func=get_remote_address)
 
 # --- Sentry Initialization ---
 # This should be done as early as possible in your application's lifecycle.
@@ -41,6 +48,10 @@ app = FastAPI(
     description="API for providing real-time writing suggestions.",
     version="1.0.0"
 )
+
+# Add the rate limiter to the app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- CORS (Cross-Origin Resource Sharing) Configuration ---
 # This middleware allows your Next.js frontend (running on a different domain)

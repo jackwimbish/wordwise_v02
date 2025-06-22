@@ -3,11 +3,13 @@ import uuid
 import asyncio
 import json
 from typing import List, Dict, Set, Tuple
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 import sentry_sdk
 from openai import AsyncOpenAI
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from ..database import get_db_session
 from ..auth import get_current_user_profile
@@ -20,6 +22,9 @@ from ..schemas import (
     ClearDismissedResponse,
     Suggestion
 )
+
+# Initialize the rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Sentry SDK Compatibility Layer
 def set_span_attribute(span, key: str, value):
@@ -181,23 +186,26 @@ def select_best_position(positions: List[Tuple[int, int]], used_positions: set) 
 
 
 @router.post("/analyze", response_model=SuggestionAnalysisResponse)
+@limiter.limit("1600/hour")
 async def analyze_paragraphs(
-    request: ParagraphAnalysisRequest,
+    request: Request,
+    request_data: ParagraphAnalysisRequest,
     current_profile: Profile = Depends(get_current_user_profile),
     db: AsyncSession = Depends(get_db_session)
 ):
     """
     Analyze paragraphs for spelling, grammar, and style suggestions.
+    Rate limited to 1600 requests per hour.
     """
     # Validate request limits
-    if len(request.paragraphs) > MAX_PARAGRAPHS_PER_REQUEST:
+    if len(request_data.paragraphs) > MAX_PARAGRAPHS_PER_REQUEST:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Too many paragraphs. Maximum {MAX_PARAGRAPHS_PER_REQUEST} allowed."
         )
     
     # Validate paragraph lengths
-    for paragraph in request.paragraphs:
+    for paragraph in request_data.paragraphs:
         if len(paragraph.text_content) > MAX_PARAGRAPH_LENGTH:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -207,7 +215,7 @@ async def analyze_paragraphs(
     # Verify document ownership
     document_result = await db.execute(
         select(Document).where(
-            Document.id == request.document_id,
+            Document.id == request_data.document_id,
             Document.profile_id == current_profile.id
         )
     )
@@ -220,20 +228,20 @@ async def analyze_paragraphs(
     
     with sentry_sdk.start_span(
         op="suggestions.analyze_paragraphs",
-        description=f"Analyze {len(request.paragraphs)} paragraphs"
+        description=f"Analyze {len(request_data.paragraphs)} paragraphs"
     ) as span:
-        set_span_attribute(span, "document_id", str(request.document_id))
-        set_span_attribute(span, "paragraphs_count", len(request.paragraphs))
+        set_span_attribute(span, "document_id", str(request_data.document_id))
+        set_span_attribute(span, "paragraphs_count", len(request_data.paragraphs))
         
         # Get dismissed suggestions for filtering
         dismissed_identifiers = await get_dismissed_suggestions(
-            db, current_profile.id, request.document_id
+            db, current_profile.id, request_data.document_id
         )
         set_span_attribute(span, "dismissed_count", len(dismissed_identifiers))
         
         # Process paragraphs concurrently
         tasks = []
-        for paragraph in request.paragraphs:
+        for paragraph in request_data.paragraphs:
             if paragraph.text_content.strip():  # Skip empty paragraphs
                 tasks.append(analyze_paragraph_with_llm(paragraph.text_content))
         
@@ -245,7 +253,7 @@ async def analyze_paragraphs(
         errors = []
         processed_count = 0
         
-        non_empty_paragraphs = [p for p in request.paragraphs if p.text_content.strip()]
+        non_empty_paragraphs = [p for p in request_data.paragraphs if p.text_content.strip()]
         
         for i, (paragraph, llm_result) in enumerate(zip(non_empty_paragraphs, llm_results)):
             processed_count += 1
