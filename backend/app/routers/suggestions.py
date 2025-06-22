@@ -3,7 +3,7 @@ import uuid
 import asyncio
 import json
 from typing import List, Dict, Set, Tuple
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete
 import sentry_sdk
@@ -21,7 +21,7 @@ from ..schemas import (
     Suggestion
 )
 
-# Create rate limit dependencies for different endpoints
+# Create rate limit dependency for suggestions
 suggestions_rate_limit = create_rate_limit_dependency(300)  # 300 requests per hour for suggestions
 
 # Sentry SDK Compatibility Layer
@@ -186,7 +186,7 @@ def select_best_position(positions: List[Tuple[int, int]], used_positions: set) 
 @router.post("/analyze", response_model=SuggestionAnalysisResponse)
 async def analyze_paragraphs(
     request_data: ParagraphAnalysisRequest,
-    current_profile: Profile = Depends(suggestions_rate_limit),  # Use our custom rate limiter
+    current_profile: Profile = Depends(suggestions_rate_limit),
     db: AsyncSession = Depends(get_db_session)
 ):
     """
@@ -301,6 +301,10 @@ async def analyze_paragraphs(
                         suggestion_data["original_text"],
                         suggestion_data["rule_id"]
                     )
+                    
+                    # Skip if original text is the same as suggestion text
+                    if suggestion_data["original_text"] == suggestion_data["suggestion_text"]:
+                        continue
                     
                     # Skip if this suggestion was dismissed
                     if dismissal_id in dismissed_identifiers:
