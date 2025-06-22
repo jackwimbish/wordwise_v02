@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import rs from 'text-readability'
 
 interface ReadabilityStats {
@@ -58,10 +58,7 @@ export function ReadabilityScore({ text }: ReadabilityScoreProps) {
   if (!stats) {
     return (
       <Card className="w-full">
-        <CardHeader>
-          <CardTitle className="text-lg">Readability Score</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">
             Start writing to see readability statistics
           </p>
@@ -84,10 +81,7 @@ export function ReadabilityScore({ text }: ReadabilityScoreProps) {
 
   return (
     <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="text-lg">Readability Score</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         {/* Primary Score */}
         <div className="p-3 bg-muted rounded-lg">
           <div className="flex justify-between items-center">
@@ -96,17 +90,6 @@ export function ReadabilityScore({ text }: ReadabilityScoreProps) {
           </div>
           <div className={`text-sm ${readabilityInfo.color} font-medium`}>
             {readabilityInfo.label}
-          </div>
-        </div>
-
-        {/* Grade Level */}
-        <div className="p-3 bg-muted rounded-lg">
-          <div className="flex justify-between items-center">
-            <span className="text-sm font-medium">Grade Level</span>
-            <span className="text-lg font-bold">{stats.textStandard}</span>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            Flesch-Kincaid: {stats.fleschKincaidGrade.toFixed(1)}
           </div>
         </div>
 
@@ -120,14 +103,6 @@ export function ReadabilityScore({ text }: ReadabilityScoreProps) {
             <div className="text-xs text-muted-foreground">Sentences</div>
             <div className="text-sm font-medium">{stats.sentenceCount}</div>
           </div>
-          <div className="p-2 bg-muted rounded">
-            <div className="text-xs text-muted-foreground">Syllables</div>
-            <div className="text-sm font-medium">{stats.syllableCount}</div>
-          </div>
-          <div className="p-2 bg-muted rounded">
-            <div className="text-xs text-muted-foreground">Difficult Words</div>
-            <div className="text-sm font-medium">{stats.difficultWords}</div>
-          </div>
         </div>
 
         {/* Additional Metrics */}
@@ -136,6 +111,22 @@ export function ReadabilityScore({ text }: ReadabilityScoreProps) {
             More Metrics
           </summary>
           <div className="mt-2 space-y-2">
+            <div className="flex justify-between">
+              <span>Grade Level:</span>
+              <span className="font-medium">{stats.textStandard}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Flesch-Kincaid Grade:</span>
+              <span className="font-medium">{stats.fleschKincaidGrade.toFixed(1)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Syllables:</span>
+              <span className="font-medium">{stats.syllableCount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Difficult Words:</span>
+              <span className="font-medium">{stats.difficultWords}</span>
+            </div>
             <div className="flex justify-between">
               <span>Gunning Fog:</span>
               <span className="font-medium">{stats.gunningFog.toFixed(1)}</span>
