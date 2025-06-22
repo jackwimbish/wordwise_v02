@@ -9,9 +9,9 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'WordWise - AI Writing Assistant',
-  description: 'Real-time AI-powered writing suggestions to improve your writing',
-  keywords: ['writing', 'AI', 'assistant', 'grammar', 'suggestions'],
+  title: 'WordWise - AI Writing Assistant for Publishing Constraints',
+  description: 'Meet your page limits without sacrificing quality - AI-powered writing tool designed for strict publishing requirements',
+  keywords: ['writing', 'page limits', 'word count', 'publishing constraints', 'AI assistant', 'length management'],
 }
 
 export default function RootLayout({

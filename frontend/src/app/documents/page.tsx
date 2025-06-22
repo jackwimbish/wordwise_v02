@@ -128,7 +128,7 @@ export default function DocumentsPage() {
                   My Documents
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  Manage your writing projects with AI-powered assistance
+                  Manage your writing projects from first draft to final count
                 </p>
               </div>
               <div className="flex gap-3">

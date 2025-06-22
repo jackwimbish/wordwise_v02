@@ -66,7 +66,7 @@ export function SignupForm({ onSuccess }: SignupFormProps) {
       <CardHeader className="text-center">
         <CardTitle>Create Account</CardTitle>
         <CardDescription>
-          Join WordWise to improve your writing with AI
+          Join WordWise - designed for writers with strict publishing requirements
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -39,7 +39,7 @@ export default function HomePage() {
             Welcome to <span className="text-blue-600">WordWise</span>
           </h1>
           <p className="text-xl text-gray-600 mb-12">
-            Your AI-powered writing assistant for real-time suggestions and improvements
+            From first draft to final count - AI that understands your publishing limits
           </p>
 
           <div className="flex justify-center">
