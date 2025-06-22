@@ -114,7 +114,7 @@ export interface LengthRewriteRequest {
   full_text: string
   target_length: number
   unit: 'words' | 'characters'
-  mode: 'shorten' | 'lengthen'
+  mode?: 'shorten' | 'lengthen' // Optional - backend will determine automatically
 }
 
 export interface ParagraphRewrite {
@@ -140,7 +140,7 @@ export interface RetryRewriteRequest {
   previous_suggestion: string
   target_length: number
   unit: 'words' | 'characters'
-  mode: 'shorten' | 'lengthen'
+  mode?: 'shorten' | 'lengthen' // Optional - backend will determine automatically
 }
 
 export interface RetryRewriteResponse {

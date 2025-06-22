@@ -60,8 +60,10 @@ def count_words(text: str) -> int:
 
 
 def count_characters(text: str) -> int:
-    """Count characters in text."""
-    return len(text)
+    """Count characters in text (normalized whitespace like frontend)."""
+    # Normalize whitespace for character counting (same as PageCount component)
+    clean_text = ' '.join(text.split())  # Replace all whitespace sequences with single spaces
+    return len(clean_text)
 
 
 def get_text_length(text: str, unit: str) -> int:
@@ -72,6 +74,64 @@ def get_text_length(text: str, unit: str) -> int:
         return count_characters(text)
     else:
         raise ValueError(f"Invalid unit: {unit}. Must be 'words' or 'characters'")
+
+
+def determine_mode(current_length: int, target_length: int) -> str:
+    """Determine rewrite mode based on current vs target length."""
+    if current_length > target_length:
+        return "shorten"
+    elif current_length < target_length:
+        return "lengthen"
+    else:  # current_length == target_length
+        return "shorten"  # Default to shorten and process anyway
+
+
+def validate_target_length(target_length: int, unit: str, text: str) -> None:
+    """Validate target length and raise HTTPException if invalid."""
+    # Basic validation for invalid values
+    if target_length <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Target length must be greater than 0"
+        )
+    
+    # Set reasonable limits
+    MAX_REASONABLE_LENGTH = {
+        "words": 50000,      # ~100 page document
+        "characters": 300000  # ~60,000 words worth
+    }
+    
+    MIN_REASONABLE_LENGTH = {
+        "words": 5,       # Need some content to work with
+        "characters": 20   # Minimum viable sentence
+    }
+    
+    if target_length > MAX_REASONABLE_LENGTH[unit.lower()]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Target length too large. Maximum is {MAX_REASONABLE_LENGTH[unit.lower()]} {unit}"
+        )
+    
+    if target_length < MIN_REASONABLE_LENGTH[unit.lower()]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Target length too small. Minimum is {MIN_REASONABLE_LENGTH[unit.lower()]} {unit}"
+        )
+    
+    # Validate text is not empty
+    if not text or not text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please write some content before using length tools"
+        )
+    
+    # Validate text is long enough to be meaningful
+    current_length = get_text_length(text, unit)
+    if current_length < MIN_REASONABLE_LENGTH[unit.lower()]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Document too short to rewrite. Write at least {MIN_REASONABLE_LENGTH[unit.lower()]} {unit} first"
+        )
 
 
 def split_into_paragraphs(text: str) -> List[str]:
@@ -239,11 +299,8 @@ async def rewrite_for_length(
             detail="Unit must be 'words' or 'characters'"
         )
     
-    if request_data.mode.lower() not in ["shorten", "lengthen"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mode must be 'shorten' or 'lengthen'"
-        )
+    # Validate target length and text content
+    validate_target_length(request_data.target_length, request_data.unit, request_data.full_text)
     
     # Verify document ownership
     result = await db.execute(
@@ -263,6 +320,9 @@ async def rewrite_for_length(
     # Calculate current document length
     original_length = get_text_length(request_data.full_text, request_data.unit)
     target_length = request_data.target_length
+    
+    # Determine mode automatically if not provided
+    mode = request_data.mode if request_data.mode else determine_mode(original_length, target_length)
     
     # Split into paragraphs
     paragraphs = split_into_paragraphs(request_data.full_text)
@@ -295,7 +355,7 @@ async def rewrite_for_length(
         )
         
         rewritten_text = await rewrite_paragraph_with_llm(
-            paragraph_text, paragraph_target, request_data.unit, request_data.mode
+            paragraph_text, paragraph_target, request_data.unit, mode
         )
         
         return ParagraphRewrite(
@@ -336,7 +396,7 @@ async def rewrite_for_length(
         original_length=original_length,
         target_length=target_length,
         unit=request_data.unit,
-        mode=request_data.mode,
+        mode=mode,
         paragraph_rewrites=successful_rewrites,
         total_paragraphs=len(paragraphs)
     )
@@ -360,11 +420,9 @@ async def retry_rewrite(
             detail="Unit must be 'words' or 'characters'"
         )
     
-    if request_data.mode.lower() not in ["shorten", "lengthen"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mode must be 'shorten' or 'lengthen'"
-        )
+    # Determine mode automatically if not provided
+    current_length = get_text_length(request_data.original_paragraph, request_data.unit)
+    mode = request_data.mode if request_data.mode else determine_mode(current_length, request_data.target_length)
     
     # Validate paragraph length
     if len(request_data.original_paragraph) > MAX_PARAGRAPH_LENGTH:
@@ -385,7 +443,7 @@ async def retry_rewrite(
         request_data.previous_suggestion,
         request_data.target_length,
         request_data.unit,
-        request_data.mode
+        mode
     )
     
     return RetryRewriteResponse(

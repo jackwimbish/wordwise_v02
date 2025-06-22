@@ -1,10 +1,8 @@
 'use client'
-
-import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RotateCcw, Check, X } from 'lucide-react'
-import ReactDiffViewer from 'react-diff-viewer-continued'
+
 import type { ParagraphRewrite, RetryRewriteRequest } from '@/types'
 
 interface RewriteSuggestionCardProps {
@@ -26,7 +24,6 @@ export function RewriteSuggestionCard({
   onDismiss,
   isRetrying = false
 }: RewriteSuggestionCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
 
   const handleAccept = () => {
     onAccept(rewrite.paragraph_id, rewrite.rewritten_text, rewrite.original_text)
@@ -63,54 +60,19 @@ export function RewriteSuggestionCard({
       </CardHeader>
       
       <CardContent className="space-y-4">
-        {/* Preview or Full Diff */}
+        {/* Text Comparison */}
         <div className="border rounded-md overflow-hidden">
-          {isExpanded ? (
-            <ReactDiffViewer
-              oldValue={rewrite.original_text}
-              newValue={rewrite.rewritten_text}
-              splitView={false}
-              hideLineNumbers={true}
-              useDarkTheme={false}
-              styles={{
-                variables: {
-                  light: {
-                    codeFoldGutterBackground: '#f7f7f7',
-                    codeFoldBackground: '#f1f8ff',
-                  }
-                },
-                contentText: {
-                  fontSize: '14px',
-                  lineHeight: '1.5',
-                },
-                diffContainer: {
-                  fontSize: '14px',
-                }
-              }}
-            />
-          ) : (
-            <div className="p-3 space-y-2">
-              <div className="text-sm">
-                <div className="text-gray-600 mb-1">Original:</div>
-                <div className="text-gray-900 line-clamp-2">{rewrite.original_text}</div>
-              </div>
-              <div className="text-sm">
-                <div className="text-gray-600 mb-1">Rewritten:</div>
-                <div className="text-gray-900 line-clamp-2 font-medium">{rewrite.rewritten_text}</div>
-              </div>
+          <div className="text-sm">
+            <div className="bg-red-50 border-l-4 border-red-200 p-3">
+              <div className="text-red-800 font-medium mb-1">Original:</div>
+              <div className="text-red-900 whitespace-pre-wrap">{rewrite.original_text}</div>
             </div>
-          )}
+            <div className="bg-green-50 border-l-4 border-green-200 p-3">
+              <div className="text-green-800 font-medium mb-1">Rewritten:</div>
+              <div className="text-green-900 whitespace-pre-wrap">{rewrite.rewritten_text}</div>
+            </div>
+          </div>
         </div>
-
-        {/* Toggle Diff View */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-xs h-8"
-        >
-          {isExpanded ? 'Show Preview' : 'Show Full Diff'}
-        </Button>
 
         {/* Action Buttons */}
         <div className="flex gap-2">

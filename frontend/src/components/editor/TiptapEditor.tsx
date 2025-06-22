@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { SuggestionExtension } from '@/lib/editor/SuggestionExtension'
 import { SuggestionPopup } from '@/components/editor/SuggestionPopup'
-import { LengthRewriter } from '@/components/editor/LengthRewriter'
+
 import { useAppStore } from '@/lib/store'
 import type { SuggestionResponse, ParagraphToAnalyze, ParagraphAnalysisRequest } from '@/types'
 
@@ -965,70 +965,7 @@ export function TiptapEditor({
     },
   })
 
-    // Handle paragraph updates from the length rewriter
-  const handleParagraphUpdate = useCallback((paragraphId: number, newContent: string, originalText?: string) => {
-    if (!editor) return
 
-    console.log(`🔄 Attempting to update paragraph ${paragraphId} with original: "${originalText?.slice(0, 50)}..."`)
-
-    let targetParagraphPos: number | null = null
-    
-    // If we have original text, try to find by content match first
-    if (originalText) {
-      const originalTrimmed = originalText.trim()
-      
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'paragraph') {
-          const paragraphText = node.textContent.trim()
-          
-          // Look for exact match or very close match
-          if (paragraphText === originalTrimmed || 
-              (paragraphText.length > 10 && originalTrimmed.includes(paragraphText.slice(0, 20))) ||
-              (originalTrimmed.length > 10 && paragraphText.includes(originalTrimmed.slice(0, 20)))) {
-            targetParagraphPos = pos
-            console.log(`✅ Found content match at position ${pos}: "${paragraphText.slice(0, 50)}..."`)
-            return false // Stop iteration
-          }
-        }
-      })
-    }
-    
-    // If content match failed, fall back to index-based matching
-    if (targetParagraphPos === null) {
-      let paragraphIndex = 0
-      
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'paragraph') {
-          if (paragraphIndex === paragraphId) {
-            targetParagraphPos = pos
-            console.log(`📍 Using index match at position ${pos} (paragraph ${paragraphIndex})`)
-            return false // Stop iteration
-          }
-          paragraphIndex++
-        }
-      })
-    }
-
-    if (targetParagraphPos !== null) {
-      const tr = editor.state.tr
-      const paragraphNode = editor.state.doc.nodeAt(targetParagraphPos)
-      
-      if (paragraphNode) {
-        const from = targetParagraphPos + 1 // Start inside the paragraph
-        const to = targetParagraphPos + paragraphNode.nodeSize - 1 // End inside the paragraph
-        
-        // Replace the paragraph content
-        tr.replaceWith(from, to, editor.state.schema.text(newContent))
-        
-        // Apply the transaction
-        editor.view.dispatch(tr)
-        
-        console.log(`✅ Successfully updated paragraph: "${newContent.slice(0, 50)}..."`)
-      }
-    } else {
-      console.error(`❌ Could not find paragraph to update. ID: ${paragraphId}, Original: "${originalText?.slice(0, 50)}..."`)
-    }
-  }, [editor])
 
   // Helper function to check if a suggestion is still valid after an edit (from Milestone 2)
   const isValidSuggestion = (
@@ -1419,16 +1356,7 @@ export function TiptapEditor({
             </Button>
           )}
 
-          {/* Length Rewriter */}
-          {documentId && editor && (
-            <div className="ml-2">
-              <LengthRewriter
-                documentId={documentId}
-                documentContent={editor.getText()}
-                onParagraphUpdate={handleParagraphUpdate}
-              />
-            </div>
-          )}
+
         </div>
       </div>
 

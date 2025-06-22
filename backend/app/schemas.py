@@ -127,7 +127,7 @@ class LengthRewriteRequest(BaseModel):
     full_text: str = Field(..., description="The entire document content")
     target_length: int = Field(..., gt=0, description="Target length (must be positive)")
     unit: str = Field(..., description="Unit of measurement: 'words' or 'characters'")
-    mode: str = Field(..., description="Rewrite mode: 'shorten' or 'lengthen'")
+    mode: Optional[str] = Field(None, description="Rewrite mode: 'shorten' or 'lengthen' (auto-determined if not provided)")
 
     model_config = {
         "json_schema_extra": {
@@ -190,7 +190,7 @@ class RetryRewriteRequest(BaseModel):
     previous_suggestion: str = Field(..., description="The previous rewrite suggestion to avoid")
     target_length: int = Field(..., gt=0, description="Target length for the paragraph")
     unit: str = Field(..., description="Unit of measurement: 'words' or 'characters'")
-    mode: str = Field(..., description="Rewrite mode: 'shorten' or 'lengthen'")
+    mode: Optional[str] = Field(None, description="Rewrite mode: 'shorten' or 'lengthen' (auto-determined if not provided)")
 
     model_config = {
         "json_schema_extra": {

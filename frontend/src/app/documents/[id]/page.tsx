@@ -6,10 +6,12 @@ import { useAppStore } from '@/lib/store'
 import { TiptapEditor } from '@/components/editor/TiptapEditor'
 import { ReadabilityScore } from '@/components/editor/ReadabilityScore'
 import { PageCount } from '@/components/editor/PageCount'
+import { RewriteSidebar } from '@/components/editor/RewriteSidebar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Navbar } from '@/components/navigation/Navbar'
 import { Card } from '@/components/ui/card'
+import type { LengthRewriteResponse, RetryRewriteRequest } from '@/types'
 
 export default function DocumentPage() {
   const params = useParams()
@@ -35,6 +37,11 @@ export default function DocumentPage() {
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null)
   const [readabilityText, setReadabilityText] = useState('')
+  
+  // Rewrite sidebar state
+  const [rewriteResponse, setRewriteResponse] = useState<LengthRewriteResponse | null>(null)
+  const [retryingParagraphs, setRetryingParagraphs] = useState<Set<number>>(new Set())
+  const [dismissedParagraphs, setDismissedParagraphs] = useState<Set<number>>(new Set())
   const loadedDocumentId = useRef<string | null>(null)
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -200,6 +207,109 @@ export default function DocumentPage() {
     }
   }
 
+  // Rewrite sidebar handlers
+  const handleAcceptRewrite = useCallback((paragraphId: number, rewrittenText: string, originalText?: string) => {
+    console.log(`Accepting rewrite for paragraph ${paragraphId}`, { rewrittenText, originalText })
+    
+    // Update the document content by finding and replacing the paragraph
+    if (currentDocument && originalText) {
+      const currentContent = currentDocument.content
+      const originalTrimmed = originalText.trim()
+      
+      // Try to find and replace the original text with the rewritten text
+      let updatedContent = currentContent
+      
+      // First try exact match
+      if (currentContent.includes(originalTrimmed)) {
+        updatedContent = currentContent.replace(originalTrimmed, rewrittenText.trim())
+      } else {
+        // If exact match fails, try to find by paragraph splitting
+        const paragraphs = currentContent.split('\n\n')
+        
+        // Find the paragraph by index or content similarity
+        if (paragraphId < paragraphs.length) {
+          const targetParagraph = paragraphs[paragraphId]
+          
+          // Check if this paragraph matches or is similar to the original
+          if (targetParagraph.trim() === originalTrimmed || 
+              (targetParagraph.length > 10 && originalTrimmed.includes(targetParagraph.slice(0, 20))) ||
+              (originalTrimmed.length > 10 && targetParagraph.includes(originalTrimmed.slice(0, 20)))) {
+            paragraphs[paragraphId] = rewrittenText.trim()
+            updatedContent = paragraphs.join('\n\n')
+          }
+        }
+      }
+      
+      // Update the document content
+      if (updatedContent !== currentContent) {
+        updateCurrentDocumentContent(updatedContent)
+        // Also update the readability text to reflect the new content
+        setReadabilityText(updatedContent)
+        console.log('✅ Successfully updated document content and readability text')
+      } else {
+        console.warn('⚠️ Could not find paragraph to update in document')
+      }
+    }
+    
+    // Remove this paragraph from the suggestions
+    if (rewriteResponse) {
+      const updatedRewrites = rewriteResponse.paragraph_rewrites.filter(
+        rewrite => rewrite.paragraph_id !== paragraphId
+      )
+      
+      setRewriteResponse({
+        ...rewriteResponse,
+        paragraph_rewrites: updatedRewrites
+      })
+    }
+  }, [rewriteResponse, currentDocument, updateCurrentDocumentContent])
+
+  const handleRetryRewrite = useCallback(async (paragraphId: number, retryRequest: RetryRewriteRequest) => {
+    setRetryingParagraphs(prev => new Set(prev).add(paragraphId))
+
+    try {
+      const response = await apiClient.retryRewrite(retryRequest)
+      
+              // Update the rewrite response with the new suggestion
+        if (rewriteResponse) {
+          const updatedRewrites = rewriteResponse.paragraph_rewrites.map(rewrite => {
+          if (rewrite.paragraph_id === paragraphId) {
+            return {
+              ...rewrite,
+              rewritten_text: response.rewritten_text,
+              rewritten_length: response.rewritten_length
+            }
+          }
+          return rewrite
+        })
+        
+        setRewriteResponse({
+          ...rewriteResponse,
+          paragraph_rewrites: updatedRewrites
+        })
+      }
+      
+    } catch (error) {
+      console.error('Failed to retry rewrite:', error)
+      alert('Failed to get alternative suggestion. Please try again.')
+    } finally {
+      setRetryingParagraphs(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(paragraphId)
+        return newSet
+      })
+    }
+  }, [apiClient, rewriteResponse])
+
+  const handleDismissRewrite = useCallback((paragraphId: number) => {
+    setDismissedParagraphs(prev => new Set(prev).add(paragraphId))
+  }, [])
+
+  // Get visible suggestions (not dismissed)
+  const visibleSuggestions = rewriteResponse?.paragraph_rewrites.filter(
+    rewrite => !dismissedParagraphs.has(rewrite.paragraph_id)
+  ) || []
+
 
 
   if (currentDocumentLoading) {
@@ -358,6 +468,22 @@ export default function DocumentPage() {
             />
           </Card>
         </div>
+
+        {/* Right Panel - Rewrite Tools */}
+        <RewriteSidebar
+          rewriteResponse={rewriteResponse}
+          visibleSuggestions={visibleSuggestions}
+          retryingParagraphs={retryingParagraphs}
+          onAcceptRewrite={handleAcceptRewrite}
+          onRetryRewrite={handleRetryRewrite}
+          onDismissRewrite={handleDismissRewrite}
+          unit={(rewriteResponse?.unit as 'words' | 'characters') || 'words'}
+          mode={(rewriteResponse?.mode as 'shorten' | 'lengthen') || 'shorten'}
+          documentId={currentDocument?.id}
+          documentContent={readabilityText}
+          onRewriteResponse={setRewriteResponse}
+          onDismissedParagraphs={setDismissedParagraphs}
+        />
       </div>
     </div>
   )
