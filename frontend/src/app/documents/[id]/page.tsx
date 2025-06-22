@@ -7,11 +7,13 @@ import { TiptapEditor } from '@/components/editor/TiptapEditor'
 import { ReadabilityScore } from '@/components/editor/ReadabilityScore'
 import { PageCount } from '@/components/editor/PageCount'
 import { RewriteSidebar } from '@/components/editor/RewriteSidebar'
+import { PageCountSettings, DEFAULT_PAGE_SETTINGS } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Navbar } from '@/components/navigation/Navbar'
 import { Card } from '@/components/ui/card'
 import type { LengthRewriteResponse, RetryRewriteRequest } from '@/types'
+import type { Editor } from '@tiptap/react'
 
 export default function DocumentPage() {
   const params = useParams()
@@ -37,6 +39,12 @@ export default function DocumentPage() {
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null)
   const [readabilityText, setReadabilityText] = useState('')
+  
+  // Page settings state (shared between PageCount and RewriteSidebar)
+  const [pageSettings, setPageSettings] = useState<PageCountSettings>(DEFAULT_PAGE_SETTINGS)
+  
+  // Store editor reference for real-time text access
+  const [editorInstance, setEditorInstance] = useState<Editor | null>(null)
   
   // Rewrite sidebar state
   const [rewriteResponse, setRewriteResponse] = useState<LengthRewriteResponse | null>(null)
@@ -243,9 +251,18 @@ export default function DocumentPage() {
       // Update the document content
       if (updatedContent !== currentContent) {
         updateCurrentDocumentContent(updatedContent)
-        // Also update the readability text to reflect the new content
-        setReadabilityText(updatedContent)
-        console.log('✅ Successfully updated document content and readability text')
+        
+        // Force immediate readability text update if editor is available
+        if (editorInstance) {
+          // Small delay to let TipTap process the content update first
+          setTimeout(() => {
+            const currentText = editorInstance.getText()
+            setReadabilityText(currentText)
+            console.log('✅ Successfully updated document content and forced readability text update')
+          }, 50)
+        } else {
+          console.log('✅ Successfully updated document content (readability text will update via debounce)')
+        }
       } else {
         console.warn('⚠️ Could not find paragraph to update in document')
       }
@@ -352,7 +369,11 @@ export default function DocumentPage() {
         <div className="w-80 flex-shrink-0 p-4 bg-white/50 border-r border-gray-200">
           <div className="sticky top-4 space-y-4">
             <ReadabilityScore text={readabilityText} />
-            <PageCount text={readabilityText} />
+            <PageCount 
+              text={readabilityText} 
+              settings={pageSettings}
+              onSettingsChange={setPageSettings}
+            />
           </div>
         </div>
         
@@ -463,6 +484,7 @@ export default function DocumentPage() {
               content={currentDocument.content}
               onUpdate={updateCurrentDocumentContent}
               onReadabilityTextChange={setReadabilityText}
+              onEditorReady={setEditorInstance}
               placeholder="Start writing your document..."
               documentId={currentDocument.id}
             />
@@ -481,8 +503,10 @@ export default function DocumentPage() {
           mode={(rewriteResponse?.mode as 'shorten' | 'lengthen') || 'shorten'}
           documentId={currentDocument?.id}
           documentContent={readabilityText}
+          editorInstance={editorInstance}
           onRewriteResponse={setRewriteResponse}
           onDismissedParagraphs={setDismissedParagraphs}
+          pageSettings={pageSettings}
         />
       </div>
     </div>

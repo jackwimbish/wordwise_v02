@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,28 +18,52 @@ import {
 } from '@/components/ui/select'
 import { PenTool, Loader2 } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
+import { 
+  PageCountSettings, 
+  DEFAULT_PAGE_SETTINGS, 
+  convertPagesToCharacters, 
+  calculateCharactersPerPage, 
+  formatPageSettings 
+} from '@/lib/utils'
+import rs from 'text-readability'
 import type { 
   LengthRewriteRequest, 
   LengthRewriteResponse
 } from '@/types'
+import type { Editor } from '@tiptap/react'
 
 interface LengthRewriterProps {
   documentId: string
   documentContent: string
+  editorInstance?: Editor | null
   onRewriteResponse: (response: LengthRewriteResponse | null) => void
   onDismissedParagraphs: (paragraphs: Set<number>) => void
+  pageSettings?: PageCountSettings
 }
 
 export function LengthRewriter({ 
   documentId, 
   documentContent, 
+  editorInstance,
   onRewriteResponse,
-  onDismissedParagraphs
+  onDismissedParagraphs,
+  pageSettings = DEFAULT_PAGE_SETTINGS
 }: LengthRewriterProps) {
   // Form state
   const [targetLength, setTargetLength] = useState<string>('500')
-  const [unit, setUnit] = useState<'words' | 'characters'>('words')
+  const [unit, setUnit] = useState<'words' | 'characters' | 'pages'>('words')
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
+  
+  // Update target length when unit changes
+  useEffect(() => {
+    if (unit === 'pages') {
+      setTargetLength('2.0') // Default to 2 pages (with decimal for clarity)
+    } else if (unit === 'words') {
+      setTargetLength('500') // Default to 500 words
+    } else {
+      setTargetLength('2000') // Default to 2000 characters
+    }
+  }, [unit])
 
   // Rewrite state
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -48,18 +72,53 @@ export function LengthRewriter({
   const { apiClient } = useAppStore()
 
   // Calculate current document length
-  const getCurrentLength = useCallback((text: string, unit: 'words' | 'characters'): number => {
+  const getCurrentLength = useCallback((text: string, unit: 'words' | 'characters' | 'pages'): number => {
+    if (!text || text.trim().length === 0) return 0
+    
     if (unit === 'words') {
-      return text.trim().split(/\s+/).length
+      // Use the same word counting method as ReadabilityScore component
+      try {
+        return rs.lexiconCount(text)
+      } catch (error) {
+        console.warn('Error using lexiconCount, falling back to simple count:', error)
+        return text.trim().split(/\s+/).length
+      }
+    } else if (unit === 'characters') {
+      // Normalize whitespace for character counting (same as PageCount component)
+      const cleanText = text.replace(/\s+/g, ' ').trim()
+      return cleanText.length
+    } else if (unit === 'pages') {
+      // For pages, calculate using page settings
+      const cleanText = text.replace(/\s+/g, ' ').trim()
+      const charsPerPage = calculateCharactersPerPage(pageSettings)
+      return cleanText.length / charsPerPage
     }
-    return text.length
-  }, [])
+    
+    return 0
+  }, [pageSettings])
 
-  const currentLength = getCurrentLength(documentContent, unit)
+  // Get current text from editor if available, fallback to documentContent
+  const getCurrentDocumentText = useCallback(() => {
+    if (editorInstance) {
+      return editorInstance.getText()
+    }
+    return documentContent || ''
+  }, [editorInstance, documentContent])
+
+  const currentLength = getCurrentLength(getCurrentDocumentText(), unit)
 
   // Handle form submission
   const handleAnalyzeDocument = async () => {
-    const targetLengthNum = parseInt(targetLength)
+    // Get real-time text content from editor if available, fallback to documentContent
+    const currentText = getCurrentDocumentText()
+    
+    if (!currentText.trim()) {
+      alert('Please write some content before using length tools')
+      return
+    }
+
+    // Use parseFloat for pages (which can be decimal), parseInt for others
+    const targetLengthNum = unit === 'pages' ? parseFloat(targetLength) : parseInt(targetLength)
     
     if (isNaN(targetLengthNum) || targetLengthNum <= 0) {
       alert('Please enter a valid target length')
@@ -70,11 +129,20 @@ export function LengthRewriter({
     setIsPopoverOpen(false)
 
     try {
+      // Convert pages to characters if needed
+      let actualTargetLength = targetLengthNum
+      let actualUnit: 'words' | 'characters' = unit as 'words' | 'characters'
+      
+      if (unit === 'pages') {
+        actualTargetLength = convertPagesToCharacters(targetLengthNum, pageSettings)
+        actualUnit = 'characters'
+      }
+
       const request: LengthRewriteRequest = {
         document_id: documentId,
-        full_text: documentContent,
-        target_length: targetLengthNum,
-        unit
+        full_text: currentText,
+        target_length: actualTargetLength,
+        unit: actualUnit
         // mode will be determined automatically by the backend
       }
 
@@ -119,8 +187,27 @@ export function LengthRewriter({
           <div className="space-y-3">
             {/* Current Length Display */}
             <div className="text-sm text-gray-600">
-              Current length: <span className="font-medium">{currentLength} {unit}</span>
+              Current length: <span className="font-medium">
+                {unit === 'pages' ? currentLength.toFixed(1) : Math.round(currentLength)} {unit}
+              </span>
             </div>
+            
+            {/* Page Settings Display & Conversion (when pages is selected) */}
+            {unit === 'pages' && (
+              <div className="space-y-2">
+                <div className="text-xs text-gray-500">
+                  Settings: {formatPageSettings(pageSettings)}
+                </div>
+                <div className="text-xs text-gray-500">
+                  ≈ {calculateCharactersPerPage(pageSettings)} characters per page
+                </div>
+                                 {targetLength && !isNaN(parseFloat(targetLength)) && (
+                   <div className="text-xs text-blue-600 font-medium">
+                     Target: {targetLength} pages = ~{convertPagesToCharacters(parseFloat(targetLength), pageSettings).toLocaleString()} characters
+                   </div>
+                 )}
+              </div>
+            )}
             
             {/* Target Length Input */}
             <div className="space-y-2">
@@ -128,23 +215,39 @@ export function LengthRewriter({
               <Input
                 id="target-length"
                 type="number"
-                min="1"
+                min={unit === 'pages' ? '0.1' : '1'}
+                step={unit === 'pages' ? '0.1' : '1'}
+                onInput={(e) => {
+                  // For non-pages units, prevent decimal input
+                  if (unit !== 'pages') {
+                    const value = e.currentTarget.value;
+                    if (value.includes('.')) {
+                      e.currentTarget.value = value.split('.')[0];
+                      setTargetLength(e.currentTarget.value);
+                    }
+                  }
+                }}
                 value={targetLength}
                 onChange={(e) => setTargetLength(e.target.value)}
-                placeholder="e.g. 500"
+                placeholder={
+                  unit === 'pages' ? 'e.g. 2' : 
+                  unit === 'words' ? 'e.g. 500' : 
+                  'e.g. 2000'
+                }
               />
             </div>
             
             {/* Unit Select */}
             <div className="space-y-2">
               <Label>Unit</Label>
-              <Select value={unit} onValueChange={(value: 'words' | 'characters') => setUnit(value)}>
+              <Select value={unit} onValueChange={(value: 'words' | 'characters' | 'pages') => setUnit(value)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="words">Words</SelectItem>
                   <SelectItem value="characters">Characters</SelectItem>
+                  <SelectItem value="pages">Pages</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -163,7 +266,7 @@ export function LengthRewriter({
                   Analyzing...
                 </>
               ) : (
-                'Rewrite to Target Length'
+                `Rewrite to ${targetLength || 'Target'} ${unit === 'pages' ? (parseFloat(targetLength) === 1 ? 'Page' : 'Pages') : (parseInt(targetLength) === 1 ? unit.slice(0, -1) : unit)}`
               )}
             </Button>
           </div>

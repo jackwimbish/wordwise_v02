@@ -16,12 +16,19 @@ import {
 import { ChevronLeft, ChevronRight, PenTool, Loader2 } from 'lucide-react'
 import { RewriteSuggestionCard } from './RewriteSuggestionCard'
 import { useAppStore } from '@/lib/store'
+import { 
+  PageCountSettings, 
+  convertPagesToCharacters, 
+  calculateCharactersPerPage, 
+  formatPageSettings 
+} from '@/lib/utils'
 import type { 
   LengthRewriteResponse, 
   LengthRewriteRequest,
   RetryRewriteRequest,
   ParagraphRewrite
 } from '@/types'
+import type { Editor } from '@tiptap/react'
 
 interface RewriteSidebarProps {
   rewriteResponse: LengthRewriteResponse | null
@@ -34,8 +41,10 @@ interface RewriteSidebarProps {
   mode: 'shorten' | 'lengthen'
   documentId?: string
   documentContent?: string
+  editorInstance?: Editor | null
   onRewriteResponse?: (response: LengthRewriteResponse | null) => void
   onDismissedParagraphs?: (paragraphs: Set<number>) => void
+  pageSettings: PageCountSettings
 }
 
 export function RewriteSidebar({
@@ -49,15 +58,28 @@ export function RewriteSidebar({
   mode,
   documentId,
   documentContent,
+  editorInstance,
   onRewriteResponse,
-  onDismissedParagraphs
+  onDismissedParagraphs,
+  pageSettings
 }: RewriteSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   
   // Length tools form state
   const [targetLength, setTargetLength] = useState<string>('500')
-  const [formUnit, setFormUnit] = useState<'words' | 'characters'>('words')
+  const [formUnit, setFormUnit] = useState<'words' | 'characters' | 'pages'>('words')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  
+  // Update target length when unit changes
+  useEffect(() => {
+    if (formUnit === 'pages') {
+      setTargetLength('2.0') // Default to 2 pages (with decimal for clarity)
+    } else if (formUnit === 'words') {
+      setTargetLength('500') // Default to 500 words
+    } else {
+      setTargetLength('2000') // Default to 2000 characters
+    }
+  }, [formUnit])
   
   // API client
   const { apiClient } = useAppStore()
@@ -65,7 +87,7 @@ export function RewriteSidebar({
   // Auto-expand when suggestions first become available, auto-collapse when they're gone
   const hasSuggestions = visibleSuggestions.length > 0
   
-  // Auto-expand when suggestions appear, auto-collapse when they disappear
+  // Auto-expand when suggestions appear or when new suggestions arrive, auto-collapse when they disappear
   useEffect(() => {
     if (hasSuggestions) {
       setIsExpanded(true)
@@ -74,10 +96,17 @@ export function RewriteSidebar({
     }
   }, [hasSuggestions])
   
+  // Also auto-expand when new suggestions arrive (even if there were already suggestions)
+  useEffect(() => {
+    if (rewriteResponse && visibleSuggestions.length > 0) {
+      setIsExpanded(true)
+    }
+  }, [rewriteResponse, visibleSuggestions.length])
+  
   const actuallyExpanded = isExpanded
 
   // Calculate current document length (using same method as ReadabilityScore for consistency)
-  const getCurrentLength = useCallback((text: string, unit: 'words' | 'characters'): number => {
+  const getCurrentLength = useCallback((text: string, unit: 'words' | 'characters' | 'pages'): number => {
     if (!text || text.trim().length === 0) return 0
     
     if (unit === 'words') {
@@ -88,21 +117,56 @@ export function RewriteSidebar({
         console.warn('Error using lexiconCount, falling back to simple count:', error)
         return text.trim().split(/\s+/).length
       }
+    } else if (unit === 'characters') {
+      // Normalize whitespace for character counting (same as PageCount component)
+      const cleanText = text.replace(/\s+/g, ' ').trim()
+      return cleanText.length
+    } else if (unit === 'pages') {
+      // For pages, calculate using page settings
+      const cleanText = text.replace(/\s+/g, ' ').trim()
+      const charsPerPage = calculateCharactersPerPage(pageSettings)
+      return cleanText.length / charsPerPage
     }
-    // Normalize whitespace for character counting (same as PageCount component)
-    const cleanText = text.replace(/\s+/g, ' ').trim()
-    return cleanText.length
-  }, [])
+    
+    return 0
+  }, [pageSettings])
 
-  const currentLength = documentContent ? getCurrentLength(documentContent, formUnit) : 0
+  // Calculate current document length using real-time text from editor if available
+  const getCurrentDocumentText = useCallback(() => {
+    if (editorInstance) {
+      return editorInstance.getText()
+    }
+    return documentContent || ''
+  }, [editorInstance, documentContent])
+
+  const currentLength = getCurrentLength(getCurrentDocumentText(), formUnit)
 
   // Handle form submission
   const handleAnalyzeDocument = async () => {
-    if (!documentId || !documentContent || !onRewriteResponse || !onDismissedParagraphs) {
+    if (!documentId || !onRewriteResponse || !onDismissedParagraphs) {
       return
     }
 
-    const targetLengthNum = parseInt(targetLength)
+    // Get real-time text content from editor if available, fallback to documentContent
+    let currentText: string
+    if (editorInstance) {
+      currentText = editorInstance.getText()
+      console.log('📝 Using real-time text from editor:', currentText.slice(0, 100) + '...')
+    } else if (documentContent) {
+      currentText = documentContent
+      console.log('⚠️ Fallback to documentContent (may be stale):', currentText.slice(0, 100) + '...')
+    } else {
+      alert('No document content available')
+      return
+    }
+
+    if (!currentText.trim()) {
+      alert('Please write some content before using length tools')
+      return
+    }
+
+    // Use parseFloat for pages (which can be decimal), parseInt for others
+    const targetLengthNum = formUnit === 'pages' ? parseFloat(targetLength) : parseInt(targetLength)
     
     if (isNaN(targetLengthNum) || targetLengthNum <= 0) {
       alert('Please enter a valid target length')
@@ -112,11 +176,20 @@ export function RewriteSidebar({
     setIsAnalyzing(true)
 
     try {
+      // Convert pages to characters if needed
+      let actualTargetLength = targetLengthNum
+      let actualUnit: 'words' | 'characters' = formUnit as 'words' | 'characters'
+      
+      if (formUnit === 'pages') {
+        actualTargetLength = convertPagesToCharacters(targetLengthNum, pageSettings)
+        actualUnit = 'characters'
+      }
+
       const request: LengthRewriteRequest = {
         document_id: documentId,
-        full_text: documentContent,
-        target_length: targetLengthNum,
-        unit: formUnit
+        full_text: currentText,
+        target_length: actualTargetLength,
+        unit: actualUnit
         // mode will be determined automatically by the backend
       }
 
@@ -215,39 +288,74 @@ export function RewriteSidebar({
             <div className="p-4 space-y-4">
               {/* Length tools form - always shown when collapsed */}
               <div className="space-y-3">
-                {/* Current Length Display */}
-                {documentContent && (
-                  <div className="text-sm text-gray-600 text-center">
-                    Current length: <span className="font-medium">{currentLength} {formUnit}</span>
+                                  {/* Current Length Display */}
+                  {getCurrentDocumentText().trim() && (
+                    <div className="text-sm text-gray-600 text-center">
+                      Current length: <span className="font-medium">
+                        {formUnit === 'pages' ? currentLength.toFixed(1) : Math.round(currentLength)} {formUnit}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Page Settings Display & Conversion (when pages is selected) */}
+                  {formUnit === 'pages' && (
+                    <div className="space-y-2">
+                      <div className="text-xs text-gray-500 text-center">
+                        Settings: {formatPageSettings(pageSettings)}
+                      </div>
+                      <div className="text-xs text-gray-500 text-center">
+                        ≈ {calculateCharactersPerPage(pageSettings)} characters per page
+                      </div>
+                      {targetLength && !isNaN(parseFloat(targetLength)) && (
+                        <div className="text-xs text-blue-600 text-center font-medium">
+                          Target: {targetLength} pages = ~{convertPagesToCharacters(parseFloat(targetLength), pageSettings).toLocaleString()} characters
+                        </div>
+                      )}
+                    </div>
+                  )}
+                
+                                  {/* Target Length Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="target-length">Target Length</Label>
+                    <Input
+                      id="target-length"
+                      type="number"
+                      min={formUnit === 'pages' ? '0.1' : '1'}
+                      step={formUnit === 'pages' ? '0.1' : '1'}
+                      onInput={(e) => {
+                        // For non-pages units, prevent decimal input
+                        if (formUnit !== 'pages') {
+                          const value = e.currentTarget.value;
+                          if (value.includes('.')) {
+                            e.currentTarget.value = value.split('.')[0];
+                            setTargetLength(e.currentTarget.value);
+                          }
+                        }
+                      }}
+                      value={targetLength}
+                      onChange={(e) => setTargetLength(e.target.value)}
+                      placeholder={
+                        formUnit === 'pages' ? 'e.g. 2' : 
+                        formUnit === 'words' ? 'e.g. 500' : 
+                        'e.g. 2000'
+                      }
+                    />
                   </div>
-                )}
                 
-                {/* Target Length Input */}
-                <div className="space-y-2">
-                  <Label htmlFor="target-length">Target Length</Label>
-                  <Input
-                    id="target-length"
-                    type="number"
-                    min="1"
-                    value={targetLength}
-                    onChange={(e) => setTargetLength(e.target.value)}
-                    placeholder="e.g. 500"
-                  />
-                </div>
-                
-                {/* Unit Select */}
-                <div className="space-y-2">
-                  <Label>Unit</Label>
-                  <Select value={formUnit} onValueChange={(value: 'words' | 'characters') => setFormUnit(value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="words">Words</SelectItem>
-                      <SelectItem value="characters">Characters</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                                  {/* Unit Select */}
+                  <div className="space-y-2">
+                    <Label>Unit</Label>
+                    <Select value={formUnit} onValueChange={(value: 'words' | 'characters' | 'pages') => setFormUnit(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="words">Words</SelectItem>
+                        <SelectItem value="characters">Characters</SelectItem>
+                        <SelectItem value="pages">Pages</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 
                 {/* Mode will be determined automatically by the backend based on target vs current length */}
                 
@@ -263,7 +371,7 @@ export function RewriteSidebar({
                       Analyzing...
                     </>
                   ) : (
-                    'Rewrite to Target Length'
+                    `Rewrite to ${targetLength || 'Target'} ${formUnit === 'pages' ? (parseFloat(targetLength) === 1 ? 'Page' : 'Pages') : (parseInt(targetLength) === 1 ? formUnit.slice(0, -1) : formUnit)}`
                   )}
                 </Button>
               </div>

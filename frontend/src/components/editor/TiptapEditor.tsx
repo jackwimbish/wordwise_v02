@@ -30,6 +30,7 @@ interface TiptapEditorProps {
   editable?: boolean
   documentId?: string
   onReadabilityTextChange?: (text: string) => void
+  onEditorReady?: (editor: Editor) => void
 }
 
 // Helper function to create a simple hash of text content
@@ -76,7 +77,8 @@ export function TiptapEditor({
   placeholder = 'Start writing...', 
   editable = true,
   documentId,
-  onReadabilityTextChange
+  onReadabilityTextChange,
+  onEditorReady
 }: TiptapEditorProps) {
   // State for live suggestions from backend
   const [suggestions, setSuggestions] = useState<SuggestionResponse[]>([])
@@ -1082,10 +1084,13 @@ export function TiptapEditor({
     return null
   }
 
-  // Store editor reference for potential future use
+  // Store editor reference and notify parent when editor is ready
   useEffect(() => {
     editorRef.current = editor
-  }, [editor])
+    if (editor && onEditorReady) {
+      onEditorReady(editor)
+    }
+  }, [editor, onEditorReady])
 
   // Initialize readability text when editor is available
   useEffect(() => {

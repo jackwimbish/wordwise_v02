@@ -1,117 +1,45 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-
-interface PageCountSettings {
-  fontFamily: string
-  fontSize: number
-  paperSize: string
-  lineSpacing: string
-  margins: string
-}
+import { 
+  PageCountSettings, 
+  DEFAULT_PAGE_SETTINGS, 
+  calculatePageCount 
+} from '@/lib/utils'
 
 interface PageCountProps {
   text: string
+  settings?: PageCountSettings
+  onSettingsChange?: (settings: PageCountSettings) => void
 }
 
-interface PaperSize {
-  width: number
-  height: number
-}
-
-interface FontCharacteristics {
-  charsPerInch: number
-  lineHeight: number
-}
-
-export function PageCount({ text }: PageCountProps) {
-  const [settings, setSettings] = useState<PageCountSettings>({
-    fontFamily: 'times',
-    fontSize: 12,
-    paperSize: 'letter',
-    lineSpacing: 'double',
-    margins: '1inch'
-  })
-
+export function PageCount({ text, settings: propSettings, onSettingsChange }: PageCountProps) {
+  // Use local state for settings if not provided as props
+  const [localSettings, setLocalSettings] = useState<PageCountSettings>(DEFAULT_PAGE_SETTINGS)
   const [pageCount, setPageCount] = useState(0)
-
-  const calculatePageCount = useCallback((text: string, settings: PageCountSettings): number => {
-    if (!text || text.trim().length === 0) return 0
-
-    // Paper size definitions (in inches)
-    const paperSizes: Record<string, PaperSize> = {
-      letter: { width: 8.5, height: 11 },
-      a4: { width: 8.27, height: 11.69 },
-      legal: { width: 8.5, height: 14 }
-    }
-
-    // Font characteristics
-    const fontCharacteristics: Record<string, FontCharacteristics> = {
-      times: { charsPerInch: 12, lineHeight: 1.2 },
-      arial: { charsPerInch: 11, lineHeight: 1.2 },
-      calibri: { charsPerInch: 11.5, lineHeight: 1.2 },
-      helvetica: { charsPerInch: 11, lineHeight: 1.2 }
-    }
-
-    // Margin definitions (in inches)
-    const marginSizes: Record<string, number> = {
-      '0.5inch': 0.5,
-      '1inch': 1,
-      '1.5inch': 1.5
-    }
-
-    // Line spacing multipliers
-    const lineSpacingMultipliers: Record<string, number> = {
-      single: 1,
-      '1.5': 1.5,
-      double: 2
-    }
-
-    const paper = paperSizes[settings.paperSize]
-    const font = fontCharacteristics[settings.fontFamily]
-    const marginSize = marginSizes[settings.margins]
-    const spacingMultiplier = lineSpacingMultipliers[settings.lineSpacing]
-
-    // Calculate usable page dimensions
-    const usableWidth = paper.width - (marginSize * 2)
-    const usableHeight = paper.height - (marginSize * 2)
-
-    // Calculate characters per line
-    const baseCharsPerInch = font.charsPerInch
-    // Adjust for font size (12pt is baseline)
-    const fontSizeMultiplier = 12 / settings.fontSize
-    const adjustedCharsPerInch = baseCharsPerInch * fontSizeMultiplier
-    const charsPerLine = Math.floor(usableWidth * adjustedCharsPerInch)
-
-    // Calculate lines per page
-    const baseLineHeight = (settings.fontSize / 72) * font.lineHeight // Convert pt to inches
-    const adjustedLineHeight = baseLineHeight * spacingMultiplier
-    const linesPerPage = Math.floor(usableHeight / adjustedLineHeight)
-
-    // Calculate characters per page
-    const charsPerPage = charsPerLine * linesPerPage
-
-    // Count characters (excluding excessive whitespace)
-    const cleanText = text.replace(/\s+/g, ' ').trim()
-    const totalChars = cleanText.length
-
-    // Calculate page count
-    const estimatedPages = totalChars / charsPerPage
-
-    return Math.max(estimatedPages, 0)
-  }, [])
+  
+  // Use prop settings if provided, otherwise use local settings
+  const settings = propSettings || localSettings
 
   useEffect(() => {
     const count = calculatePageCount(text, settings)
     setPageCount(count)
-  }, [text, settings, calculatePageCount])
+  }, [text, settings])
 
   const updateSetting = <K extends keyof PageCountSettings>(
     key: K,
     value: PageCountSettings[K]
   ) => {
-    setSettings(prev => ({ ...prev, [key]: value }))
+    const newSettings = { ...settings, [key]: value }
+    
+    if (onSettingsChange) {
+      // If using prop settings, notify parent of change
+      onSettingsChange(newSettings)
+    } else {
+      // If using local settings, update local state
+      setLocalSettings(newSettings)
+    }
   }
 
   return (
