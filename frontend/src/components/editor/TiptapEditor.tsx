@@ -1423,7 +1423,7 @@ export function TiptapEditor({
         {/* Status indicators for Milestone 3 */}
         <div className="ml-4 text-xs flex items-center gap-3">
           <span className={`${isAnalyzing ? 'text-blue-600' : 'text-green-600'}`}>
-            {isAnalyzing ? '🔄 Analyzing...' : `✨ ${suggestions.length} suggestions`}
+            {isAnalyzing ? '🔄 Analyzing...' : '✨ Suggestions ready'}
           </span>
           {analysisErrors.length > 0 && (
             <span className="text-red-600" title={analysisErrors.join(', ')}>
