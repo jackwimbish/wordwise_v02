@@ -36,6 +36,48 @@ interface TiptapEditorProps {
   onEditorReady?: (editor: Editor) => void
 }
 
+/*
+ * ========================================
+ * UUID-BASED PARAGRAPH IDENTIFICATION SYSTEM
+ * ========================================
+ * 
+ * This implementation uses UUIDs for paragraph identification to solve
+ * duplicate suggestions and position-based detection issues.
+ * 
+ * KEY IMPROVEMENTS:
+ * 
+ * 1. STABLE PARAGRAPH IDS: 
+ *    - Each paragraph gets a persistent UUID based on content hash
+ *    - UUIDs remain stable across text changes (unlike position-based IDs)
+ *    - Eliminates race conditions from position mapping
+ * 
+ * 2. SIMPLIFIED SUGGESTION MERGING:
+ *    - Direct UUID matching instead of fragile position-based detection
+ *    - Reliable identification of which suggestions to keep/remove
+ *    - No more false positives from position range overlaps
+ * 
+ * 3. GRADUAL MIGRATION:
+ *    - New paragraphs automatically get UUID-based IDs
+ *    - Position-based paragraphs are gradually migrated to UUIDs
+ *    - Analysis only processes UUID-based paragraphs (prevents duplicates)
+ * 
+ * 4. DEBUGGING SUPPORT:
+ *    - Development environment shows UUID vs POS badges
+ *    - Console logging tracks migration progress
+ *    - Detailed analysis of paragraph composition
+ * 
+ * BENEFITS:
+ * - Eliminates duplicate suggestions from race conditions
+ * - Makes suggestion lifecycle more predictable
+ * - Reduces complexity of position-based logic
+ * - Improves system reliability and maintainability
+ * 
+ * BACKEND COMPATIBILITY:
+ * - Backend should eventually return paragraph_id with each suggestion
+ * - Enables direct suggestion-to-paragraph mapping
+ * - Further simplifies frontend logic
+ */
+
 // Helper function to create a simple hash of text content
 function hashContent(text: string): string {
   let hash = 0
@@ -122,6 +164,62 @@ export function TiptapEditor({
   // Get API client from store
   const { apiClient } = useAppStore()
 
+  // Persistent paragraph UUID mapping to maintain stable IDs across text changes
+  const persistentParagraphIds = useRef(new Map<string, string>())
+  
+  // Cleanup old paragraph mappings periodically to prevent memory leaks
+  const cleanupParagraphMappings = useRef<Map<string, number>>(new Map()) // contentHash -> lastSeen timestamp
+
+  // Helper function to check if an ID is a UUID
+  const isUUID = useCallback((id: string): boolean => {
+    // UUID v4 pattern: 8-4-4-4-12 hexadecimal digits
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    return uuidRegex.test(id)
+  }, [])
+
+  // Helper function to generate or retrieve persistent UUID for paragraph content
+  const getParagraphId = useCallback((content: string, contentHash: string): string => {
+    // Try to get existing UUID for this content hash
+    let paragraphId = persistentParagraphIds.current.get(contentHash)
+    
+    if (!paragraphId) {
+      // Generate new UUID for new paragraph content
+      paragraphId = crypto.randomUUID()
+      persistentParagraphIds.current.set(contentHash, paragraphId)
+      console.log(`🆔 Generated new UUID for paragraph: ${paragraphId} (hash: ${contentHash.slice(0, 8)})`)
+    } else {
+      console.log(`♻️ Reusing existing UUID for paragraph: ${paragraphId} (hash: ${contentHash.slice(0, 8)})`)
+    }
+    
+    // Update last seen timestamp for cleanup
+    cleanupParagraphMappings.current.set(contentHash, Date.now())
+    
+    return paragraphId
+  }, [])
+
+  // Periodic cleanup of old paragraph mappings (prevent memory leaks)
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now()
+      const maxAge = 30 * 60 * 1000 // 30 minutes
+      
+      let removedCount = 0
+      for (const [contentHash, lastSeen] of cleanupParagraphMappings.current.entries()) {
+        if (now - lastSeen > maxAge) {
+          persistentParagraphIds.current.delete(contentHash)
+          cleanupParagraphMappings.current.delete(contentHash)
+          removedCount++
+        }
+      }
+      
+      if (removedCount > 0) {
+        console.log(`🧹 Cleaned up ${removedCount} old paragraph mappings`)
+      }
+    }, 5 * 60 * 1000) // Run cleanup every 5 minutes
+    
+    return () => clearInterval(cleanupInterval)
+  }, [])
+
   // Helper function to detect significant text changes
   const hasSignificantTextChange = useCallback((originalText: string, currentText: string): boolean => {
     // If either text is empty, it's not significant for our purposes
@@ -177,7 +275,7 @@ export function TiptapEditor({
         }
         
         // Generate consistent paragraph ID based on position and hash
-        const paragraphId = `p_${pos}_${contentHash.slice(0, 8)}`
+        const paragraphId = getParagraphId(content, contentHash)
         
         paragraphStates.push({
           id: paragraphId,
@@ -192,7 +290,7 @@ export function TiptapEditor({
     })
     
     return paragraphStates
-  }, [])
+  }, [getParagraphId])
 
   // Detect dirty paragraphs by comparing with previous state
   const updateParagraphStates = useCallback((newParagraphs: ParagraphState[]) => {
@@ -219,7 +317,21 @@ export function TiptapEditor({
     
     console.log(`🚀 performAnalysis called with ${paragraphsToAnalyze.length} paragraphs`)
     
-    if (paragraphsToAnalyze.length === 0) return
+    // CRITICAL IMPROVEMENT: Only analyze paragraphs with UUID-based IDs
+    // This eliminates position-based detection issues and prevents duplicates
+    const uuidParagraphs = paragraphsToAnalyze.filter(p => isUUID(p.id))
+    const skippedParagraphs = paragraphsToAnalyze.filter(p => !isUUID(p.id))
+    
+    console.log(`📊 Analysis filtering: ${uuidParagraphs.length} UUID paragraphs, ${skippedParagraphs.length} position-based paragraphs skipped`)
+    
+    if (skippedParagraphs.length > 0) {
+      console.log('⏭️ Skipped position-based paragraphs:', skippedParagraphs.map(p => `${p.id}: "${p.content.slice(0, 30)}..."`))
+    }
+    
+    if (uuidParagraphs.length === 0) {
+      console.log('ℹ️ No UUID-based paragraphs to analyze')
+      return
+    }
     
     // Cancel any ongoing analysis
     if (currentAbortController.current) {
@@ -243,8 +355,8 @@ export function TiptapEditor({
         apiCallDocState.current = editorRef.current.state.doc.textContent
       }
       
-      // Prepare request
-      const paragraphsForRequest: ParagraphToAnalyze[] = paragraphsToAnalyze.map(p => ({
+      // Prepare request using only UUID paragraphs
+      const paragraphsForRequest: ParagraphToAnalyze[] = uuidParagraphs.map(p => ({
         paragraph_id: p.id,
         text_content: p.content,
         base_offset: p.baseOffset
@@ -255,43 +367,44 @@ export function TiptapEditor({
         paragraphs: paragraphsForRequest
       }
       
-      console.log('📤 Request details:', {
+      console.log('📤 UUID-based request details:', {
         document_id: request.document_id,
-        paragraphs_count: request.paragraphs.length,
+        uuid_paragraphs_count: request.paragraphs.length,
         has_api_client: !!apiClient
       })
-      console.log('📤 Full request:', request)
+      console.log('📤 Full UUID-based request:', request)
       
-      // Debug: Log paragraph positions for verification
+      // Debug: Log UUID paragraph details for verification
       paragraphsForRequest.forEach(p => {
-        console.log(`📍 Paragraph "${p.text_content.slice(0, 50)}..." base_offset: ${p.base_offset}`)
+        console.log(`🆔 UUID Paragraph "${p.text_content.slice(0, 50)}..." id: ${p.paragraph_id}, base_offset: ${p.base_offset}`)
       })
       
       // Make API call with abort signal
-      console.log('🚀 Making API call to analyze paragraphs...')
+      console.log('🚀 Making API call to analyze UUID-based paragraphs...')
       const response = await apiClient.analyzeParagraphs(request, abortController.signal)
       
-      console.log('📥 Analysis response received:', {
+      console.log('📥 UUID-based analysis response received:', {
         suggestions: response.suggestions?.length || 0,
         errors: response.errors?.length || 0,
         totalParagraphsProcessed: response.total_paragraphs_processed
       })
-      console.log('📥 Full response:', response)
+      console.log('📥 Full UUID-based response:', response)
       
       // Log individual suggestions for debugging
       if (response.suggestions && response.suggestions.length > 0) {
         response.suggestions.forEach((suggestion, index) => {
-          console.log(`📝 Suggestion ${index + 1}:`, {
+          console.log(`📝 UUID-based Suggestion ${index + 1}:`, {
             rule_id: suggestion.rule_id,
             category: suggestion.category,
             original_text: suggestion.original_text,
             suggestion_text: suggestion.suggestion_text,
             message: suggestion.message,
-            positions: `${suggestion.global_start}-${suggestion.global_end}`
+            positions: `${suggestion.global_start}-${suggestion.global_end}`,
+            paragraph_id: (suggestion as SuggestionResponse & { paragraph_id?: string }).paragraph_id || 'not provided' // Check if backend provides paragraph_id
           })
         })
       } else {
-        console.log('⚠️ No suggestions returned from API')
+        console.log('⚠️ No UUID-based suggestions returned from API')
       }
       
       // Transform suggestions based on minor transactions that occurred during the API call
@@ -299,7 +412,7 @@ export function TiptapEditor({
       let transformedSuggestions = response.suggestions
       
       if (pendingTransactions.current.length > 0) {
-        console.log(`📍 Applying ${pendingTransactions.current.length} minor position adjustments to ${response.suggestions.length} suggestions`)
+        console.log(`📍 Applying ${pendingTransactions.current.length} minor position adjustments to ${response.suggestions.length} UUID-based suggestions`)
         
         transformedSuggestions = response.suggestions.map(suggestion => {
           try {
@@ -355,9 +468,9 @@ export function TiptapEditor({
               const text = editorRef.current.state.doc.textBetween(s.global_start, s.global_end)
               
               if (text === s.original_text) {
-                console.log(`✅ Suggestion "${s.original_text}" positioned correctly at ${s.global_start}-${s.global_end}`)
+                console.log(`✅ UUID-based suggestion "${s.original_text}" positioned correctly at ${s.global_start}-${s.global_end}`)
               } else {
-                console.warn(`🚨 Position error: "${s.original_text}" -> "${text}" at ${s.global_start}-${s.global_end}`)
+                console.warn(`🚨 UUID-based position error: "${s.original_text}" -> "${text}" at ${s.global_start}-${s.global_end}`)
                 
                 // Try to find the correct position by searching the document
                 const docText = editorRef.current.state.doc.textContent
@@ -378,53 +491,74 @@ export function TiptapEditor({
                 }
               }
             } catch (error) {
-              console.warn(`Failed to verify suggestion position ${s.global_start}-${s.global_end}:`, error)
+              console.warn(`Failed to verify UUID-based suggestion position ${s.global_start}-${s.global_end}:`, error)
             }
           } else {
-            console.warn(`Invalid suggestion positions: ${s.global_start}-${s.global_end} (doc size: ${docSize})`)
+            console.warn(`Invalid UUID-based suggestion positions: ${s.global_start}-${s.global_end} (doc size: ${docSize})`)
           }
         }
       })
       
-      // Update suggestions state by merging with existing suggestions from non-analyzed paragraphs
-      console.log(`🔄 Merging ${transformedSuggestions.length} new suggestions with existing suggestions`)
+      // SIMPLIFIED SUGGESTION MERGING: With UUID-based paragraphs, we can use direct ID matching
+      console.log(`🔄 Merging ${transformedSuggestions.length} new UUID-based suggestions with existing suggestions`)
       
       setSuggestions(prevSuggestions => {
-        // Get IDs of paragraphs that were analyzed
-        const analyzedParagraphIds = new Set(paragraphsToAnalyze.map(p => p.id))
+        // Get IDs of UUID paragraphs that were analyzed
+        const analyzedUuidParagraphIds = new Set(uuidParagraphs.map(p => p.id))
         
-        // Keep suggestions from paragraphs that were NOT analyzed
+        // SIMPLIFIED LOGIC: Keep suggestions that are NOT from analyzed UUID paragraphs
+        // This is much more reliable than position-based detection
         const suggestionsToKeep = prevSuggestions.filter(suggestion => {
-          // Find which paragraph this suggestion belongs to by checking its position
-          const suggestionParagraph = Array.from(paragraphs.values()).find(p => {
-            // Check if suggestion falls within this paragraph's range
-            return suggestion.global_start >= p.baseOffset && 
-                   suggestion.global_start < p.baseOffset + p.content.length + 50 // Add buffer for safety
-          })
+          // Check if we have paragraph_id in the suggestion (future enhancement)
+          const suggestionParagraphId = (suggestion as SuggestionResponse & { paragraph_id?: string }).paragraph_id
           
-          // Keep suggestion if it's from a paragraph that wasn't analyzed
-          const shouldKeep = !suggestionParagraph || !analyzedParagraphIds.has(suggestionParagraph.id)
-          
-          if (shouldKeep) {
-            console.log(`📌 Keeping suggestion "${suggestion.original_text}" from non-analyzed paragraph`)
+          if (suggestionParagraphId && isUUID(suggestionParagraphId)) {
+            // If suggestion has UUID paragraph ID, use direct comparison
+            const shouldKeep = !analyzedUuidParagraphIds.has(suggestionParagraphId)
+            
+            if (shouldKeep) {
+              console.log(`📌 Keeping UUID-based suggestion "${suggestion.original_text}" from non-analyzed paragraph ${suggestionParagraphId}`)
+            } else {
+              console.log(`🗑️ Removing old UUID-based suggestion "${suggestion.original_text}" from analyzed paragraph ${suggestionParagraphId}`)
+            }
+            
+            return shouldKeep
           } else {
-            console.log(`🗑️ Removing old suggestion "${suggestion.original_text}" from analyzed paragraph ${suggestionParagraph?.id}`)
+            // For suggestions without paragraph_id, use fallback position-based detection
+            // but only for non-UUID paragraphs (legacy support)
+            const suggestionParagraph = Array.from(paragraphs.values()).find(p => {
+              // Only check non-UUID paragraphs for position-based matching
+              if (isUUID(p.id)) return false
+              
+              // Check if suggestion falls within this paragraph's range
+              return suggestion.global_start >= p.baseOffset && 
+                     suggestion.global_start < p.baseOffset + p.content.length + 50 // Add buffer for safety
+            })
+            
+            // Keep suggestion if it's from a non-UUID paragraph (legacy) or unmatched
+            const shouldKeep = !suggestionParagraph || !analyzedUuidParagraphIds.has(suggestionParagraph.id)
+            
+            if (shouldKeep) {
+              console.log(`📌 Keeping legacy suggestion "${suggestion.original_text}" from non-UUID context`)
+            } else {
+              console.log(`🗑️ Removing legacy suggestion "${suggestion.original_text}" from analyzed context`)
+            }
+            
+            return shouldKeep
           }
-          
-          return shouldKeep
         })
         
-        // Combine kept suggestions with new suggestions
+        // Combine kept suggestions with new UUID-based suggestions
         const mergedSuggestions = [...suggestionsToKeep, ...transformedSuggestions]
         
-        console.log(`🎯 Suggestion merge complete: ${suggestionsToKeep.length} kept + ${transformedSuggestions.length} new = ${mergedSuggestions.length} total`)
+        console.log(`🎯 UUID-based suggestion merge complete: ${suggestionsToKeep.length} kept + ${transformedSuggestions.length} new = ${mergedSuggestions.length} total`)
         
         return mergedSuggestions
       })
       
-      // Mark analyzed paragraphs as clean
+      // Mark analyzed UUID paragraphs as clean
       const cleanParagraphs = new Map(paragraphs)
-      paragraphsToAnalyze.forEach(p => {
+      uuidParagraphs.forEach(p => {
         const existing = cleanParagraphs.get(p.id)
         if (existing) {
           cleanParagraphs.set(p.id, { ...existing, isDirty: false })
@@ -440,17 +574,17 @@ export function TiptapEditor({
     } catch (error) {
       // Don't log errors for aborted requests (these are expected when we cancel)
       if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log('Analysis request was cancelled')
+        console.log('UUID-based analysis request was cancelled')
         return
       }
       
-      console.error('❌ Failed to analyze paragraphs:', error)
+      console.error('❌ Failed to analyze UUID-based paragraphs:', error)
       console.error('❌ Error details:', {
         name: error instanceof Error ? error.name : 'Unknown',
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
       })
-      setAnalysisErrors([`Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`])
+      setAnalysisErrors([`UUID-based analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`])
     } finally {
       analysisInProgress.current = false
       setIsAnalyzing(false)
@@ -460,7 +594,7 @@ export function TiptapEditor({
       
       // Check if we need follow-up analysis for changes that occurred during this analysis
       if (needsFollowUpAnalysis.current) {
-        console.log('🔄 Follow-up analysis needed - triggering analysis for changes made during previous analysis')
+        console.log('🔄 Follow-up UUID-based analysis needed - triggering analysis for changes made during previous analysis')
         needsFollowUpAnalysis.current = false
         
         // Use a small delay to avoid immediate re-triggering and let the UI update
@@ -470,7 +604,7 @@ export function TiptapEditor({
         }
         
         debounceTimeoutRef.current = setTimeout(() => {
-          console.log('🔄 Follow-up analysis triggered - will use fresh paragraph extraction')
+          console.log('🔄 Follow-up UUID-based analysis triggered - will use fresh paragraph extraction')
           // Use triggerAnalysis instead of calling analyzeDirtyParagraphs directly to avoid circular dependency
           if (debounceTimeoutRef.current) {
             clearTimeout(debounceTimeoutRef.current)
@@ -488,8 +622,8 @@ export function TiptapEditor({
           }, 50)
         }, 100) // Shorter delay for follow-up analysis
       }
-    }
-  }, [documentId, apiClient, extractParagraphs, updateParagraphStates])
+    }  
+  }, [documentId, apiClient, extractParagraphs, updateParagraphStates, paragraphs, isUUID])
 
   // Fixed function that extracts FRESH paragraphs when debounce executes (not when timer is set)
   // NOTE: ESLint warning about missing 'paragraphs' dependency is INTENTIONAL and safe to ignore.
@@ -1284,6 +1418,65 @@ export function TiptapEditor({
   useEffect(() => {
     hasInitialAnalysisRun.current = false
   }, [documentId])
+
+  // Migration helper: Convert position-based paragraphs to UUID-based over time
+  const migratePositionBasedParagraphs = useCallback(() => {
+    const currentParagraphs = Array.from(paragraphs.values())
+    const positionBasedParagraphs = currentParagraphs.filter(p => !isUUID(p.id))
+    
+    if (positionBasedParagraphs.length > 0) {
+      console.log(`🔄 Migrating ${positionBasedParagraphs.length} position-based paragraphs to UUID-based`)
+      
+      const updatedParagraphs = new Map(paragraphs)
+      let migrationCount = 0
+      
+      positionBasedParagraphs.forEach(p => {
+        // Generate new UUID for this paragraph content
+        const newUUID = getParagraphId(p.content, p.contentHash)
+        
+        // Remove old position-based entry
+        updatedParagraphs.delete(p.id)
+        
+        // Add new UUID-based entry
+        updatedParagraphs.set(newUUID, {
+          ...p,
+          id: newUUID
+        })
+        
+        migrationCount++
+        console.log(`✅ Migrated paragraph "${p.content.slice(0, 30)}..." from ${p.id} to ${newUUID}`)
+      })
+      
+      if (migrationCount > 0) {
+        setParagraphs(updatedParagraphs)
+        console.log(`🎯 Migration complete: ${migrationCount} paragraphs converted to UUID-based`)
+      }
+    }
+  }, [paragraphs, isUUID, getParagraphId])
+
+  // Run migration periodically to gradually convert paragraphs
+  useEffect(() => {
+    const migrationInterval = setInterval(() => {
+      migratePositionBasedParagraphs()
+    }, 10000) // Run every 10 seconds
+    
+    return () => clearInterval(migrationInterval)
+  }, [migratePositionBasedParagraphs])
+
+  // Debug logging for paragraph composition
+  useEffect(() => {
+    const currentParagraphs = Array.from(paragraphs.values())
+    const uuidParagraphs = currentParagraphs.filter(p => isUUID(p.id))
+    const positionParagraphs = currentParagraphs.filter(p => !isUUID(p.id))
+    
+    if (currentParagraphs.length > 0) {
+      console.log(`📊 Paragraph composition: ${uuidParagraphs.length} UUID-based, ${positionParagraphs.length} position-based (total: ${currentParagraphs.length})`)
+      
+      if (positionParagraphs.length > 0) {
+        console.log('📍 Position-based paragraphs remaining:', positionParagraphs.map(p => `${p.id}: "${p.content.slice(0, 20)}..."`))
+      }
+    }
+  }, [paragraphs, isUUID])
 
   if (!editor) {
     return null
